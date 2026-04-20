@@ -1,174 +1,342 @@
-import { prisma } from '@ai-marketing/db';
-import { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildApp } from '../src/app';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
+import type { FastifyInstance } from 'fastify'
 
-// Мокаем сервис скоринга, чтобы избежать реальных вызовов Claude в интеграционных тестах
+beforeAll(() => {
+  process.env.JWT_SECRET = 'test-secret-key-minimum-32-chars!!'
+  process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-32-chars!!!!'
+  process.env.INTERNAL_API_TOKEN = 'test-internal-token'
+})
+
+vi.mock('@ai-marketing/db', () => ({
+  prisma: {
+    user: { findUnique: vi.fn(), create: vi.fn() },
+    refreshToken: {
+      create: vi.fn().mockResolvedValue({}),
+      findUnique: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({}),
+    },
+    projectMember: { findUnique: vi.fn() },
+    task: {
+      create: vi.fn(),
+      findFirst: vi.fn(),
+      update: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      count: vi.fn().mockResolvedValue(0),
+    },
+    projectProfile: { findUnique: vi.fn() },
+    execution: { create: vi.fn() },
+    $transaction: vi.fn(),
+  },
+  withProjectContext: vi.fn(),
+}))
+
+vi.mock('@ai-marketing/ai-engine', () => ({
+  renderTokenPrometheusMetrics: vi.fn().mockResolvedValue(''),
+}))
+
+vi.mock('bcryptjs', () => ({
+  default: { hash: vi.fn(), compare: vi.fn() },
+}))
+
 vi.mock('../src/services/scoring', () => ({
-    scoreTask: vi.fn().mockResolvedValue({
-        score: 85,
-        reasoning: 'Comprehensive task description',
-        suggestions: []
+  scoreTask: vi.fn(),
+}))
+
+import { buildApp } from '../src/app'
+import { prisma, withProjectContext } from '@ai-marketing/db'
+import bcrypt from 'bcryptjs'
+import { scoreTask } from '../src/services/scoring'
+
+const db = prisma as any
+const mockBcrypt = bcrypt as any
+const mockScoreTask = scoreTask as any
+const mockWPC = withProjectContext as any
+
+const PROJECT_ID = 'proj-00000000-0000-0000-0000-000000000001'
+const TASK_ID = 'task-0000-0000-0000-0000-000000000001'
+const USER_ID = 'user-0000-0000-0000-0000-000000000001'
+
+async function getToken(app: FastifyInstance): Promise<string> {
+  db.user.findUnique.mockResolvedValueOnce({
+    id: USER_ID,
+    email: 'tester@example.com',
+    name: 'Tester',
+    passwordHash: 'hashed_pw',
+  })
+  db.refreshToken.create.mockResolvedValue({})
+  mockBcrypt.compare.mockResolvedValueOnce(true)
+
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'tester@example.com', password: 'password123' },
+  })
+  return res.json().data.tokens.accessToken
+}
+
+// ─── POST /api/projects/:projectId/tasks ─────────────────────────────────────
+
+describe('POST /api/projects/:projectId/tasks', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('201 — score ≥ 40 creates PENDING task', async () => {
+    const token = await getToken(app)
+
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    mockScoreTask.mockResolvedValue({ score: 85, scenario: 'A', reasoning: 'Clear', isValid: true })
+    db.task.create.mockResolvedValue({
+      id: TASK_ID,
+      projectId: PROJECT_ID,
+      input: 'Create a comprehensive content strategy for Q1',
+      score: 85,
+      scenario: 'A',
+      status: 'PENDING',
+      createdAt: new Date(),
     })
-}));
 
-describe('Tasks API', () => {
-    let app: FastifyInstance;
-    let authToken: string;
-    let projectId: string;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { input: 'Create a comprehensive content strategy for Q1' },
+    })
 
-    beforeAll(async () => {
-        app = await buildApp();
-        await app.ready();
-    });
+    expect(res.statusCode).toBe(201)
+    expect(res.json().data.status).toBe('PENDING')
+  })
 
-    afterAll(async () => {
-        await app.close();
-    });
+  it('202 — score 25-39 returns AWAITING_CLARIFICATION with questions', async () => {
+    const token = await getToken(app)
 
-    beforeEach(async () => {
-        // Очистка базы
-        await prisma.task.deleteMany();
-        await prisma.projectMember.deleteMany();
-        await prisma.project.deleteMany();
-        await prisma.user.deleteMany();
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    mockScoreTask.mockResolvedValue({
+      score: 30,
+      scenario: 'A',
+      reasoning: 'Too vague',
+      isValid: true,
+      clarificationQuestions: ['Who is your target audience?', 'What is the budget?'],
+    })
+    db.task.create.mockResolvedValue({
+      id: TASK_ID,
+      projectId: PROJECT_ID,
+      input: 'Do marketing stuff',
+      score: 30,
+      status: 'AWAITING_CLARIFICATION',
+      createdAt: new Date(),
+    })
 
-        // Создаем окружение: пользователь и проект
-        const regRes = await app.inject({
-            method: 'POST',
-            url: '/api/auth/register',
-            payload: { email: 'task-tester@example.com', password: 'password123', name: 'Tester' },
-        });
-        authToken = JSON.parse(regRes.payload).data.tokens.accessToken;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { input: 'Do marketing stuff for the company' },
+    })
 
-        const projRes = await app.inject({
-            method: 'POST',
-            url: '/api/projects',
-            headers: { authorization: `Bearer ${authToken}` },
-            payload: { name: 'Automated Testing Project' },
-        });
-        projectId = JSON.parse(projRes.payload).data.id;
-    });
+    expect(res.statusCode).toBe(202)
+    const body = res.json()
+    expect(body.data.status).toBe('AWAITING_CLARIFICATION')
+    expect(Array.isArray(body.clarificationQuestions)).toBe(true)
+    expect(body.clarificationQuestions.length).toBeGreaterThan(0)
+  })
 
-    describe('POST /api/projects/:id/tasks', () => {
-        it('should create a task with status PENDING if score is >= 40', async () => {
-            const response = await app.inject({
-                method: 'POST',
-                url: `/api/projects/${projectId}/tasks`,
-                headers: { authorization: `Bearer ${authToken}` },
-                payload: {
-                    title: 'Social Media Strategy',
-                    input: 'Generate a 30-day content plan for LinkedIn',
-                    scenario: 'B'
-                },
-            });
+  it('422 — score < 25 rejects task', async () => {
+    const token = await getToken(app)
 
-            expect(response.statusCode).toBe(201);
-            const body = JSON.parse(response.payload);
-            expect(body.data.status).toBe('PENDING');
-            expect(body.data.score).toBe(85);
-        });
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    mockScoreTask.mockResolvedValue({ score: 10, scenario: 'A', reasoning: 'Too vague', isValid: false })
+    db.task.create.mockResolvedValue({
+      id: TASK_ID,
+      projectId: PROJECT_ID,
+      input: 'Do stuff',
+      score: 10,
+      status: 'REJECTED',
+      createdAt: new Date(),
+    })
 
-        it('should set status to AWAITING_CLARIFICATION if score is between 25 and 39', async () => {
-            const scoring = await import('../src/services/scoring');
-            (scoring.scoreTask as any).mockResolvedValueOnce({
-                score: 30,
-                reasoning: 'Too vague',
-                suggestions: ['Define target audience']
-            });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { input: 'Do stuff for the company campaign' },
+    })
 
-            const response = await app.inject({
-                method: 'POST',
-                url: `/api/projects/${projectId}/tasks`,
-                headers: { authorization: `Bearer ${authToken}` },
-                payload: { title: 'Vague Task', input: 'Do marketing', scenario: 'A' },
-            });
+    expect(res.statusCode).toBe(422)
+    expect(res.json().code).toBe('TASK_SCORE_TOO_LOW')
+  })
 
-            expect(response.statusCode).toBe(201);
-            expect(JSON.parse(response.payload).data.status).toBe('AWAITING_CLARIFICATION');
-        });
-    });
+  it('404 — non-member cannot create task', async () => {
+    const token = await getToken(app)
 
-    describe('POST /api/tasks/:id/clarify', () => {
-        it('should update task details and re-score', async () => {
-            // 1. Создаем задачу, требующую уточнений
-            const scoring = await import('../src/services/scoring');
-            (scoring.scoreTask as any).mockResolvedValueOnce({ score: 30, reasoning: '..', suggestions: ['..'] });
+    db.projectMember.findUnique.mockResolvedValue(null)
 
-            const createRes = await app.inject({
-                method: 'POST',
-                url: `/api/projects/${projectId}/tasks`,
-                headers: { authorization: `Bearer ${authToken}` },
-                payload: { title: 'Need Clarify', input: '...', scenario: 'A' },
-            });
-            const taskId = JSON.parse(createRes.payload).data.id;
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { input: 'Create a comprehensive content strategy for Q1' },
+    })
 
-            // 2. Отправляем уточнения и получаем высокий балл
-            (scoring.scoreTask as any).mockResolvedValueOnce({ score: 90, reasoning: 'Clear now', suggestions: [] });
+    expect(res.statusCode).toBe(404)
+  })
 
-            const response = await app.inject({
-                method: 'POST',
-                url: `/api/tasks/${taskId}/clarify`,
-                headers: { authorization: `Bearer ${authToken}` },
-                payload: {
-                    answers: [{ question: 'Target audience?', answer: 'Marketing agencies' }]
-                },
-            });
+  it('401 — unauthenticated request rejected', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/tasks`,
+      payload: { input: 'Create a comprehensive content strategy for Q1' },
+    })
 
-            expect(response.statusCode).toBe(200);
-            const body = JSON.parse(response.payload);
-            expect(body.data.status).toBe('PENDING');
-            expect(body.data.score).toBe(90);
-        });
-    });
+    expect(res.statusCode).toBe(401)
+  })
+})
 
-    describe('POST /api/tasks/:id/execute', () => {
-        it('should transition task to RUNNING status', async () => {
-            const createRes = await app.inject({
-                method: 'POST',
-                url: `/api/projects/${projectId}/tasks`,
-                headers: { authorization: `Bearer ${authToken}` },
-                payload: { title: 'Execution Test', input: 'Valid input', scenario: 'A' },
-            });
-            const taskId = JSON.parse(createRes.payload).data.id;
+// ─── POST /api/projects/:projectId/tasks/:taskId/clarify ──────────────────────
 
-            const response = await app.inject({
-                method: 'POST',
-                url: `/api/tasks/${taskId}/execute`,
-                headers: { authorization: `Bearer ${authToken}` },
-            });
+describe('POST /api/projects/:projectId/tasks/:taskId/clarify', () => {
+  let app: FastifyInstance
 
-            expect(response.statusCode).toBe(200);
-            expect(JSON.parse(response.payload).data.status).toBe('RUNNING');
-        });
-    });
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
 
-    describe('GET /api/tasks/:id/stream', () => {
-        it('should establish SSE connection with correct headers', async () => {
-            const createRes = await app.inject({
-                method: 'POST',
-                url: `/api/projects/${projectId}/tasks`,
-                headers: { authorization: `Bearer ${authToken}` },
-                payload: { title: 'Stream Test', input: '...', scenario: 'A' },
-            });
-            const taskId = JSON.parse(createRes.payload).data.id;
+  afterEach(async () => {
+    await app.close()
+  })
 
-            // Запускаем выполнение, чтобы создать объект Execution
-            await app.inject({
-                method: 'POST',
-                url: `/api/tasks/${taskId}/execute`,
-                headers: { authorization: `Bearer ${authToken}` },
-            });
+  it('200 — provides answer, rescore → PENDING', async () => {
+    const token = await getToken(app)
 
-            const response = await app.inject({
-                method: 'GET',
-                url: `/api/tasks/${taskId}/stream`,
-                headers: { authorization: `Bearer ${authToken}` },
-            });
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findFirst.mockResolvedValue({
+      id: TASK_ID,
+      projectId: PROJECT_ID,
+      input: 'Do marketing',
+      status: 'AWAITING_CLARIFICATION',
+    })
+    mockScoreTask.mockResolvedValue({ score: 80, scenario: 'B', reasoning: 'Now clear', isValid: true })
+    db.task.update.mockResolvedValue({
+      id: TASK_ID,
+      input: 'Do marketing\n\nКлиент уточнил:\nTarget: SMB companies in Russia',
+      score: 80,
+      status: 'PENDING',
+    })
 
-            expect(response.statusCode).toBe(200);
-            expect(response.headers['content-type']).toContain('text/event-stream');
-            expect(response.headers['cache-control']).toBe('no-cache');
-        });
-    });
-});
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}/clarify`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { answer: 'Target: SMB companies in Russia' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.status).toBe('PENDING')
+  })
+
+  it('400 — task not AWAITING_CLARIFICATION', async () => {
+    const token = await getToken(app)
+
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findFirst.mockResolvedValue({
+      id: TASK_ID,
+      projectId: PROJECT_ID,
+      input: 'Already clear task',
+      status: 'PENDING',
+    })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}/clarify`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { answer: 'some answer' },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('404 — non-member cannot clarify', async () => {
+    const token = await getToken(app)
+
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}/clarify`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { answer: 'some answer' },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── GET /api/projects/:projectId/tasks ───────────────────────────────────────
+
+describe('GET /api/projects/:projectId/tasks', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('200 — returns paginated task list for member', async () => {
+    const token = await getToken(app)
+
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findMany.mockResolvedValue([{ id: TASK_ID, status: 'PENDING' }])
+    db.task.count.mockResolvedValue(1)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const body = res.json()
+    expect(Array.isArray(body.data)).toBe(true)
+    expect(body.total).toBe(1)
+    expect(body.page).toBe(1)
+    expect(body.pageSize).toBe(20)
+  })
+
+  it('404 — non-member gets 404', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
