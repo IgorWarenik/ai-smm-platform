@@ -18,6 +18,9 @@ export const TOKEN_BUDGETS: Record<TokenBudgetKind, number> = {
   revisionDelta: readPositiveInt('MAX_TOKENS_REVISION_DELTA', 1500),
 }
 
+// Minimum character count for revision feedback passed to content_maker in Scenario D
+export const MIN_REVISION_FEEDBACK_CHARS = 50
+
 export function getTokenBudget(kind: TokenBudgetKind): number {
   return TOKEN_BUDGETS[kind]
 }
