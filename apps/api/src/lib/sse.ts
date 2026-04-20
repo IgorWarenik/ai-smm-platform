@@ -55,12 +55,3 @@ export const sseManager = {
     await pub.publish(`${CHANNEL_PREFIX}${taskId}`, JSON.stringify(data));
   }
 };
-
-/**
- * Обратная совместимость с существующим кодом (Proxy для старого Map интерфейса)
- * @deprecated Use sseManager instead
- */
-export const sseClients = {
-  set: (taskId: string, send: any) => sseManager.register(taskId, send),
-  delete: (taskId: string) => { /* В текущей реализации удаление требует ссылку на функцию */ }
-};
