@@ -13,6 +13,12 @@ vi.mock('@ai-marketing/db', () => ({
       findUnique: vi.fn(),
       create: vi.fn(),
     },
+    refreshToken: {
+      create: vi.fn().mockResolvedValue({}),
+      findUnique: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({}),
+    },
   },
 }))
 
@@ -213,6 +219,12 @@ describe('POST /api/auth/refresh', () => {
   it('200 — valid refresh token issues new token pair', async () => {
     const { refreshToken } = await loginAndGetTokens(app)
 
+    db.refreshToken.findUnique.mockResolvedValue({
+      token: refreshToken,
+      userId: 'user-1',
+      expiresAt: new Date(Date.now() + 86400000),
+      revokedAt: null,
+    })
     db.user.findUnique.mockResolvedValue({ id: 'user-1', email: 'owner@example.com', name: 'Owner' })
 
     const res = await app.inject({

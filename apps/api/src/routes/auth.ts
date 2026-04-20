@@ -1,7 +1,7 @@
-import type { FastifyInstance } from 'fastify'
-import bcrypt from 'bcryptjs'
 import { prisma } from '@ai-marketing/db'
-import { LoginSchema, RegisterSchema, RefreshTokenSchema } from '@ai-marketing/shared'
+import { LoginSchema, RefreshTokenSchema, RegisterSchema } from '@ai-marketing/shared'
+import bcrypt from 'bcryptjs'
+import type { FastifyInstance } from 'fastify'
 import { ACCESS_TOKEN_TTL, REFRESH_TOKEN_TTL } from '../plugins/jwt'
 
 function issueTokenPair(app: FastifyInstance, userId: string, email: string) {
@@ -14,6 +14,16 @@ function issueTokenPair(app: FastifyInstance, userId: string, email: string) {
     { expiresIn: REFRESH_TOKEN_TTL },
   )
   return { accessToken, refreshToken }
+}
+
+async function persistRefreshToken(userId: string, token: string) {
+  await prisma.refreshToken.create({
+    data: {
+      token,
+      userId,
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+    },
+  })
 }
 
 export async function authRoutes(app: FastifyInstance) {
@@ -38,6 +48,8 @@ export async function authRoutes(app: FastifyInstance) {
     })
 
     const tokens = issueTokenPair(app, user.id, user.email)
+
+    await persistRefreshToken(user.id, tokens.refreshToken)
 
     return reply.code(201).send({
       data: {
@@ -65,6 +77,8 @@ export async function authRoutes(app: FastifyInstance) {
 
     const tokens = issueTokenPair(app, user.id, user.email)
 
+    await persistRefreshToken(user.id, tokens.refreshToken)
+
     return reply.send({
       data: {
         user: { id: user.id, email: user.email, name: user.name },
@@ -88,12 +102,39 @@ export async function authRoutes(app: FastifyInstance) {
       return reply.unauthorized('Invalid token type')
     }
 
+    // Check revocation and existence
+    const storedToken = await prisma.refreshToken.findUnique({
+      where: { token: body.refreshToken },
+    })
+
+    if (!storedToken || storedToken.expiresAt < new Date()) {
+      return reply.unauthorized('Invalid or expired refresh token')
+    }
+
+    // Token Reuse Detection: If token is already revoked, someone might be attempting a replay attack.
+    // In a strict security model, you might want to revoke ALL tokens for this user here.
+    if (storedToken.revokedAt) {
+      await prisma.refreshToken.updateMany({
+        where: { userId: storedToken.userId },
+        data: { revokedAt: new Date() }
+      })
+      return reply.unauthorized('Refresh token reuse detected')
+    }
+
     const user = await prisma.user.findUnique({ where: { id: payload.sub } })
     if (!user) {
       return reply.unauthorized('User not found')
     }
 
     const tokens = issueTokenPair(app, user.id, user.email)
+
+    // Revoke old token (rotation)
+    await prisma.refreshToken.update({
+      where: { token: body.refreshToken },
+      data: { revokedAt: new Date() },
+    })
+
+    await persistRefreshToken(user.id, tokens.refreshToken)
 
     return reply.send({
       data: {
@@ -111,5 +152,17 @@ export async function authRoutes(app: FastifyInstance) {
     })
     if (!user) return reply.notFound('User not found')
     return reply.send({ data: user })
+  })
+
+  // POST /api/auth/logout
+  app.post('/logout', { preHandler: [app.authenticate] }, async (request, reply) => {
+    const body = RefreshTokenSchema.parse(request.body)
+
+    await prisma.refreshToken.updateMany({
+      where: { token: body.refreshToken, userId: request.user.sub },
+      data: { revokedAt: new Date() },
+    })
+
+    return reply.code(204).send()
   })
 }
