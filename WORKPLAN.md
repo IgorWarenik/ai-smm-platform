@@ -125,12 +125,13 @@
 ---
 
 ## Текущая задача
- Активная задача: Исправление мониторинга и автоматизация Stage 5.1.
- Статус: Масштабирование SSE через Redis Pub/Sub реализовано.
- Следующий шаг: Реализация Manager Escalation (Stage 5.3).
+ Активная задача: Codex routes hardening (`agent/routes`): knowledge RLS/pagination + SSE shim cleanup.
+ Статус: Завершено у Codex.
+ Следующий шаг: Review/merge ветки `agent/routes`.
 - Файл контекста: `docs/CONTEXT.md` + `context/kits/cavekit-overview.md`.
 - Координация агентов: добавлены root `AGENTS.md`, root `CLAUDE.md`, `docs/AGENT_SYNC.md`; оба агента должны читать их перед работой и обновлять этот блок при handoff.
 - n8n risk: `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, а существующие workflow TS лежат в `apps/workflows/local_5678_igor_g/personal`; перед workflow-правками обязательно запускать `npx --yes n8nac list`.
 - Последняя проверка n8n (`2026-04-20`): `npx --yes n8nac list` показал 5 local-only workflow (`orchestrator`, `scenario-a/b/c/d`) и 2 remote-only (`My workflow`, `My workflow 2`); workflow source ещё не синхронизирован с remote.
 - Последняя handoff-запись: Codex исправил P1 findings: `.gitignore` больше не игнорирует nested `apps/api/src/lib/`, `apps/api/src/lib/sse.ts` добавлен в index, SSE stream проверяет membership и task ownership до открытия соединения, task execution валидирует `API_BASE_URL`/`N8N_WEBHOOK_URL`, ожидает n8n webhook response и переводит execution/task в FAILED при ошибке; тесты добавлены в `tests/integration/tasks.test.ts`; валидация: `npm run build --workspace=apps/api` pass, `npm run test:integration` 89 passed; следующий шаг: remaining P1/P2 review items.
+- Handoff `2026-04-20`: Codex на `agent/routes` исправил knowledge embedding UPDATE через `withProjectContext`, завернул raw search SQL в project context, добавил pagination для `GET /knowledge`, удалил deprecated `sseClients` shim; затронуты `apps/api/src/routes/knowledge.ts`, `apps/api/src/lib/sse.ts`; валидация: `npx tsc --noEmit -p apps/api/tsconfig.json` pass, `git diff --check` pass.
 - Открытые вопросы: нет.

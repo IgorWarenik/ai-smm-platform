@@ -3,6 +3,7 @@ import { prisma, withProjectContext } from '@ai-marketing/db'
 import {
   CreateKnowledgeItemSchema,
   KnowledgeSearchSchema,
+  PaginationSchema,
 } from '@ai-marketing/shared'
 import { applyRagBudget, buildRagPack, embedText, resolveRagBudget } from '@ai-marketing/ai-engine'
 
@@ -33,15 +34,20 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     })
 
     // Embed and store vector (non-blocking, best-effort)
+    const serviceUserId =
+      process.env.INTERNAL_SERVICE_USER_ID ?? '00000000-0000-0000-0000-000000000000'
     embedText(body.content)
       .then(async (vector) => {
-        await prisma.$executeRawUnsafe(
-          `UPDATE knowledge_items SET embedding = $1::vector WHERE id = $2`,
-          `[${vector.join(',')}]`,
-          item.id
-        )
+        await withProjectContext(projectId, serviceUserId, async (tx) => {
+          await tx.$executeRawUnsafe(
+            `UPDATE knowledge_items SET embedding = $1::vector WHERE id = $2 AND project_id = $3::uuid`,
+            `[${vector.join(',')}]`,
+            item.id,
+            projectId
+          )
+        })
       })
-      .catch((err) => app.log.warn({ err }, 'Embedding failed — item stored without vector'))
+      .catch((err) => app.log.warn({ err, itemId: item.id }, 'Embedding failed — item stored without vector'))
 
     return reply.code(201).send({ data: item })
   })
@@ -64,49 +70,51 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     // Use separate queries for category-filtered vs full search to avoid
     // string interpolation SQL injection. category is validated by Zod enum
     // but parameterized queries are safer regardless.
-    const results = await (query.category
-      ? prisma.$queryRawUnsafe<Array<{
-          id: string
-          category: string
-          content: string
-          metadata: object
-          similarity: number
-        }>>(
-          `SELECT id, category, content, metadata,
-                  1 - (embedding <=> $1::vector) AS similarity
-           FROM knowledge_items
-           WHERE project_id = $2::uuid
-             AND category = $5
-             AND embedding IS NOT NULL
-             AND 1 - (embedding <=> $1::vector) >= $4
-           ORDER BY embedding <=> $1::vector
-           LIMIT $3`,
-          vectorParam,
-          projectId,
-          query.limit,
-          ragBudget.minSimilarity,
-          query.category
-        )
-      : prisma.$queryRawUnsafe<Array<{
-          id: string
-          category: string
-          content: string
-          metadata: object
-          similarity: number
-        }>>(
-          `SELECT id, category, content, metadata,
-                  1 - (embedding <=> $1::vector) AS similarity
-           FROM knowledge_items
-           WHERE project_id = $2::uuid
-             AND embedding IS NOT NULL
-             AND 1 - (embedding <=> $1::vector) >= $4
-           ORDER BY embedding <=> $1::vector
-           LIMIT $3`,
-          vectorParam,
-          projectId,
-          query.limit,
-          ragBudget.minSimilarity
-        ))
+    const results = await withProjectContext(projectId, userId, async (tx) => {
+      return query.category
+        ? tx.$queryRawUnsafe<Array<{
+            id: string
+            category: string
+            content: string
+            metadata: object
+            similarity: number
+          }>>(
+            `SELECT id, category, content, metadata,
+                    1 - (embedding <=> $1::vector) AS similarity
+             FROM knowledge_items
+             WHERE project_id = $2::uuid
+               AND category = $5
+               AND embedding IS NOT NULL
+               AND 1 - (embedding <=> $1::vector) >= $4
+             ORDER BY embedding <=> $1::vector
+             LIMIT $3`,
+            vectorParam,
+            projectId,
+            query.limit,
+            ragBudget.minSimilarity,
+            query.category
+          )
+        : tx.$queryRawUnsafe<Array<{
+            id: string
+            category: string
+            content: string
+            metadata: object
+            similarity: number
+          }>>(
+            `SELECT id, category, content, metadata,
+                    1 - (embedding <=> $1::vector) AS similarity
+             FROM knowledge_items
+             WHERE project_id = $2::uuid
+               AND embedding IS NOT NULL
+               AND 1 - (embedding <=> $1::vector) >= $4
+             ORDER BY embedding <=> $1::vector
+             LIMIT $3`,
+            vectorParam,
+            projectId,
+            query.limit,
+            ragBudget.minSimilarity
+          )
+    })
 
     const data = applyRagBudget(results, ragBudget)
     const ragPack = buildRagPack(data)
@@ -122,6 +130,7 @@ export async function knowledgeRoutes(app: FastifyInstance) {
   app.get('/', async (request, reply) => {
     const { projectId } = request.params as { projectId: string }
     const userId = request.user.sub
+    const query = PaginationSchema.parse(request.query)
 
     const membership = await prisma.projectMember.findUnique({
       where: { userId_projectId: { userId, projectId } },
@@ -131,9 +140,13 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     return withProjectContext(projectId, userId, async (tx) => {
       const items = await tx.knowledgeItem.findMany({
         where: { projectId },
+        skip: (query.page - 1) * query.pageSize,
+        take: query.pageSize,
         orderBy: { createdAt: 'desc' },
       })
-      return reply.send({ data: items })
+      const total = await tx.knowledgeItem.count({ where: { projectId } })
+
+      return reply.send({ data: items, total, page: query.page, pageSize: query.pageSize })
     })
   })
 }
