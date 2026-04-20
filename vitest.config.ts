@@ -13,15 +13,9 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: [
-      'apps/api/tests/auth.test.ts',
+      'apps/api/tests/*.test.ts',
     ],
     exclude: [
-      'apps/api/tests/approvals.test.ts',
-      'apps/api/tests/callback.test.ts',
-      'apps/api/tests/knowledge.test.ts',
-      'apps/api/tests/rag.test.ts',
-      'apps/api/tests/tasks.test.ts',
-      'apps/api/tests/token-monitor.test.ts',
       'tests/integration/**/*.test.ts',
     ],
     testTimeout: 15000,

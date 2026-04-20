@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyRagBudget } from '../src/rag-budget';
+import { applyRagBudget } from '@ai-marketing/ai-engine'
 
 describe('RAG Budgeting', () => {
     const mockItems = [

@@ -1,140 +1,283 @@
-import { prisma } from '@ai-marketing/db';
-import { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildApp } from '../src/app';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
+import type { FastifyInstance } from 'fastify'
 
-// Мокаем эмбеддинги, чтобы не делать реальных запросов к Voyage AI
-vi.mock('@ai-marketing/ai-engine', async () => {
-    const actual = await vi.importActual<any>('@ai-marketing/ai-engine');
-    return {
-        ...actual,
-        embedText: vi.fn().mockResolvedValue(new Array(1024).fill(0.1)),
-    };
-});
+beforeAll(() => {
+  process.env.JWT_SECRET = 'test-secret-key-minimum-32-chars!!'
+  process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-32-chars!!!!'
+  process.env.INTERNAL_API_TOKEN = 'test-internal-token'
+})
 
-describe('Knowledge API', () => {
-    let app: FastifyInstance;
-    let authToken: string;
-    let projectId: string;
+vi.mock('@ai-marketing/db', () => ({
+  prisma: {
+    user: { findUnique: vi.fn(), create: vi.fn() },
+    refreshToken: {
+      create: vi.fn().mockResolvedValue({}),
+      findUnique: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({}),
+    },
+    projectMember: { findUnique: vi.fn() },
+    knowledgeItem: {
+      create: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      findUnique: vi.fn(),
+    },
+    $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
+    $queryRawUnsafe: vi.fn().mockResolvedValue([]),
+    $transaction: vi.fn(),
+  },
+  withProjectContext: vi.fn(),
+}))
 
-    beforeAll(async () => {
-        app = await buildApp();
-        await app.ready();
-    });
+vi.mock('@ai-marketing/ai-engine', () => ({
+  renderTokenPrometheusMetrics: vi.fn().mockResolvedValue(''),
+  embedText: vi.fn().mockResolvedValue(new Array(1024).fill(0.1)),
+  applyRagBudget: vi.fn().mockImplementation((results: any[]) => results),
+  buildRagPack: vi.fn().mockReturnValue({ shortlist: [], promptPack: '' }),
+  resolveRagBudget: vi.fn().mockReturnValue({ maxCharsPerChunk: 1200, maxTotalChars: 4000, minSimilarity: 0.72 }),
+}))
 
-    afterAll(async () => {
-        await app.close();
-    });
+vi.mock('bcryptjs', () => ({
+  default: { hash: vi.fn(), compare: vi.fn() },
+}))
 
-    beforeEach(async () => {
-        await prisma.knowledgeItem.deleteMany();
-        await prisma.projectMember.deleteMany();
-        await prisma.project.deleteMany();
-        await prisma.user.deleteMany();
+import { buildApp } from '../src/app'
+import { prisma, withProjectContext } from '@ai-marketing/db'
+import bcrypt from 'bcryptjs'
 
-        const regRes = await app.inject({
-            method: 'POST',
-            url: '/api/auth/register',
-            payload: { email: 'kb-admin@example.com', password: 'password123', name: 'Admin' },
-        });
-        authToken = JSON.parse(regRes.payload).data.tokens.accessToken;
+const db = prisma as any
+const mockBcrypt = bcrypt as any
+const mockWPC = withProjectContext as any
 
-        const projRes = await app.inject({
-            method: 'POST',
-            url: '/api/projects',
-            headers: { authorization: `Bearer ${authToken}` },
-            payload: { name: 'KB Testing Project' },
-        });
-        projectId = JSON.parse(projRes.payload).data.id;
-    });
+const PROJECT_ID = 'proj-00000000-0000-0000-0000-000000000001'
+const USER_ID = 'user-0000-0000-0000-0000-000000000001'
 
-    describe('POST /api/projects/:id/knowledge', () => {
-        it('should create a knowledge item and return 201', async () => {
-            const response = await app.inject({
-                method: 'POST',
-                url: `/api/projects/${projectId}/knowledge`,
-                headers: { authorization: `Bearer ${authToken}` },
-                payload: {
-                    title: 'Brand Tone of Voice',
-                    content: 'Our voice is professional but accessible.',
-                    category: 'BRAND',
-                },
-            });
+async function getToken(app: FastifyInstance): Promise<string> {
+  db.user.findUnique.mockResolvedValueOnce({
+    id: USER_ID,
+    email: 'kb@example.com',
+    name: 'KB Admin',
+    passwordHash: 'hashed_pw',
+  })
+  db.refreshToken.create.mockResolvedValue({})
+  mockBcrypt.compare.mockResolvedValueOnce(true)
 
-            expect(response.statusCode).toBe(201);
-            const body = response.json();
-            expect(body.data.title).toBe('Brand Tone of Voice');
+  const res = await app.inject({
+    method: 'POST',
+    url: '/api/auth/login',
+    payload: { email: 'kb@example.com', password: 'password123' },
+  })
+  return res.json().data.tokens.accessToken
+}
 
-            const dbItem = await prisma.knowledgeItem.findUnique({ where: { id: body.data.id } });
-            expect(dbItem).toBeDefined();
-        });
-    });
+// ─── POST /api/projects/:projectId/knowledge ──────────────────────────────────
 
-    describe('GET /api/projects/:id/knowledge', () => {
-        it('should return all items for the project', async () => {
-            await prisma.knowledgeItem.create({
-                data: {
-                    projectId,
-                    title: 'Item 1',
-                    content: 'Content 1',
-                    category: 'PRODUCT',
-                }
-            });
+describe('POST /api/projects/:projectId/knowledge', () => {
+  let app: FastifyInstance
 
-            const response = await app.inject({
-                method: 'GET',
-                url: `/api/projects/${projectId}/knowledge`,
-                headers: { authorization: `Bearer ${authToken}` },
-            });
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
 
-            expect(response.statusCode).toBe(200);
-            expect(response.json().data).toHaveLength(1);
-        });
-    });
+  afterEach(async () => {
+    await app.close()
+  })
 
-    describe('POST /api/projects/:id/knowledge/search', () => {
-        it('should perform semantic search and respect minSimilarity', async () => {
-            // Создаем айтем напрямую через Prisma (в реальности триггер в БД создаст эмбеддинг или API)
-            await prisma.knowledgeItem.create({
-                data: {
-                    projectId,
-                    title: 'Deep Strategy',
-                    content: 'Information about long-term goals.',
-                    category: 'STRATEGY',
-                    // Для теста предполагаем, что поиск отработает корректно с моком
-                }
-            });
+  it('201 — creates knowledge item with valid category', async () => {
+    const token = await getToken(app)
 
-            const response = await app.inject({
-                method: 'POST',
-                url: `/api/projects/${projectId}/knowledge/search`,
-                headers: { authorization: `Bearer ${authToken}` },
-                payload: {
-                    query: 'what are our goals?',
-                    limit: 3,
-                    minSimilarity: 0.5
-                },
-            });
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.create.mockResolvedValue({
+      id: 'item-1',
+      projectId: PROJECT_ID,
+      category: 'BRAND_GUIDE',
+      content: 'Our brand voice is professional but accessible.',
+      metadata: { title: 'Brand Tone of Voice' },
+    })
 
-            expect(response.statusCode).toBe(200);
-            expect(Array.isArray(response.json().data)).toBe(true);
-        });
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/knowledge`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        category: 'BRAND_GUIDE',
+        content: 'Our brand voice is professional but accessible.',
+        metadata: { title: 'Brand Tone of Voice' },
+      },
+    })
 
-        it('should respect RAG budget (maxTotalChars)', async () => {
-            const response = await app.inject({
-                method: 'POST',
-                url: `/api/projects/${projectId}/knowledge/search`,
-                headers: { authorization: `Bearer ${authToken}` },
-                payload: {
-                    query: 'short context only',
-                    maxTotalChars: 50
-                },
-            });
+    expect(res.statusCode).toBe(201)
+    const body = res.json()
+    expect(body.data.category).toBe('BRAND_GUIDE')
+    expect(body.data.content).toBeDefined()
+  })
 
-            expect(response.statusCode).toBe(200);
-            const results = response.json().data;
-            const totalChars = results.reduce((acc: number, item: any) => acc + item.content.length, 0);
-            expect(totalChars).toBeLessThanOrEqual(50);
-        });
-    });
-});
+  it('400 — invalid category value', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/knowledge`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        category: 'INVALID_CATEGORY',
+        content: 'Some content for the knowledge base.',
+      },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('404 — non-member cannot create knowledge item', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/knowledge`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        category: 'FRAMEWORK',
+        content: 'Content for framework knowledge.',
+      },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── GET /api/projects/:projectId/knowledge ───────────────────────────────────
+
+describe('GET /api/projects/:projectId/knowledge', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('200 — returns knowledge items for member', async () => {
+    const token = await getToken(app)
+
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.findMany.mockResolvedValue([
+      { id: 'item-1', category: 'TEMPLATE', content: 'Email template 1' },
+      { id: 'item-2', category: 'SEO', content: 'SEO guidelines' },
+    ])
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/knowledge`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data).toHaveLength(2)
+  })
+
+  it('404 — non-member gets 404', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/knowledge`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── GET /api/projects/:projectId/knowledge/search ───────────────────────────
+
+describe('GET /api/projects/:projectId/knowledge/search', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('200 — semantic search returns results array', async () => {
+    const token = await getToken(app)
+
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.$queryRawUnsafe.mockResolvedValue([
+      { id: 'item-1', category: 'TEMPLATE', content: 'Email template 1', metadata: {}, similarity: 0.9 },
+    ])
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/knowledge/search?q=email+templates`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(Array.isArray(res.json().data)).toBe(true)
+  })
+
+  it('200 — returns empty array when no results match', async () => {
+    const token = await getToken(app)
+
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.$queryRawUnsafe.mockResolvedValue([])
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/knowledge/search?q=nonexistent+topic`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data).toHaveLength(0)
+  })
+
+  it('400 — missing required q parameter', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/knowledge/search`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('404 — non-member gets 404', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/knowledge/search?q=brand`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})

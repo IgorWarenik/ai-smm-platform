@@ -1,96 +1,277 @@
-import { prisma } from '@ai-marketing/db';
-import { FastifyInstance } from 'fastify';
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { buildApp } from '../src/app';
+import { describe, it, expect, vi, beforeAll, beforeEach, afterEach } from 'vitest'
+import type { FastifyInstance } from 'fastify'
 
-describe('Internal Callback API', () => {
-    let app: FastifyInstance;
-    let taskId: string;
-    let executionId: string;
+beforeAll(() => {
+  process.env.JWT_SECRET = 'test-secret-key-minimum-32-chars!!'
+  process.env.JWT_REFRESH_SECRET = 'test-refresh-secret-32-chars!!!!'
+  process.env.INTERNAL_API_TOKEN = 'test-internal-api-token-value!!'
+})
 
-    beforeAll(async () => {
-        app = await buildApp();
-        await app.ready();
-    });
+vi.mock('@ai-marketing/db', () => ({
+  prisma: {
+    user: { findUnique: vi.fn(), create: vi.fn() },
+    refreshToken: {
+      create: vi.fn().mockResolvedValue({}),
+      findUnique: vi.fn(),
+      update: vi.fn().mockResolvedValue({}),
+      updateMany: vi.fn().mockResolvedValue({}),
+    },
+    execution: { findUnique: vi.fn(), update: vi.fn() },
+    agentOutput: { create: vi.fn() },
+    task: { update: vi.fn() },
+    billing: { updateMany: vi.fn() },
+  },
+  withProjectContext: vi.fn(),
+}))
 
-    afterAll(async () => {
-        await app.close();
-    });
+vi.mock('@ai-marketing/ai-engine', () => ({
+  renderTokenPrometheusMetrics: vi.fn().mockResolvedValue(''),
+  runAgent: vi.fn().mockResolvedValue('AI generated output'),
+  TokenLimitExceededError: class TokenLimitExceededError extends Error {
+    provider = 'claude'
+    limit = 500000
+    used = 600000
+  },
+}))
 
-    beforeEach(async () => {
-        await prisma.agentOutput.deleteMany();
-        await prisma.execution.deleteMany();
-        await prisma.task.deleteMany();
-        await prisma.projectMember.deleteMany();
-        await prisma.project.deleteMany();
-        await prisma.user.deleteMany();
+// Prevent ioredis connection during SSE module load
+vi.mock('../src/lib/sse', () => ({
+  sseManager: {
+    register: vi.fn(),
+    unregister: vi.fn(),
+    publish: vi.fn().mockResolvedValue(undefined),
+  },
+}))
 
-        const user = await prisma.user.create({
-            data: { email: 'callback@test.com', passwordHash: 'hash' }
-        });
+import { buildApp } from '../src/app'
+import { prisma, withProjectContext } from '@ai-marketing/db'
 
-        const project = await prisma.project.create({
-            data: { name: 'Test Project', ownerId: user.id }
-        });
+const db = prisma as any
+const mockWPC = withProjectContext as any
 
-        const task = await prisma.task.create({
-            data: {
-                projectId: project.id,
-                title: 'Callback Task',
-                input: 'Test input',
-                status: 'RUNNING',
-                scenario: 'B'
-            }
-        });
-        taskId = task.id;
+const INTERNAL_TOKEN = 'test-internal-api-token-value!!'
+const EXECUTION_ID = 'a0000000-0000-0000-0000-000000000001'
+const TASK_ID = 'b0000000-0000-0000-0000-000000000002'
+const PROJECT_ID = 'c0000000-0000-0000-0000-000000000003'
 
-        const execution = await prisma.execution.create({
-            data: { taskId: task.id, status: 'RUNNING' }
-        });
-        executionId = execution.id;
-    });
+// ─── POST /api/internal/callback ─────────────────────────────────────────────
 
-    describe('POST /api/internal/agent-completion', () => {
-        it('should record agent output and return 200', async () => {
-            const response = await app.inject({
-                method: 'POST',
-                url: '/api/internal/agent-completion',
-                payload: {
-                    executionId,
-                    agentType: 'MARKETER',
-                    content: { brief: 'Strategic brief content' },
-                    usage: { promptTokens: 100, completionTokens: 200 }
-                }
-            });
+describe('POST /api/internal/callback', () => {
+  let app: FastifyInstance
 
-            expect(response.statusCode).toBe(200);
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
 
-            const output = await prisma.agentOutput.findFirst({
-                where: { executionId, agentType: 'MARKETER' }
-            });
-            expect(output).toBeDefined();
-            expect(output?.content).toEqual({ brief: 'Strategic brief content' });
-        });
-    });
+  afterEach(async () => {
+    await app.close()
+  })
 
-    describe('POST /api/internal/execution-complete', () => {
-        it('should mark execution and task as COMPLETED', async () => {
-            const response = await app.inject({
-                method: 'POST',
-                url: '/api/internal/execution-complete',
-                payload: {
-                    executionId,
-                    status: 'COMPLETED'
-                }
-            });
+  it('401 — request without internal token rejected', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/callback',
+      payload: {
+        executionId: EXECUTION_ID,
+        agentType: 'MARKETER',
+        output: 'Some marketing output',
+        iteration: 1,
+        status: 'completed',
+      },
+    })
+    expect(res.statusCode).toBe(401)
+  })
 
-            expect(response.statusCode).toBe(200);
+  it('200 — completed callback creates agent output', async () => {
+    db.execution.findUnique.mockResolvedValue({
+      id: EXECUTION_ID,
+      taskId: TASK_ID,
+      projectId: PROJECT_ID,
+    })
+    db.agentOutput.create.mockResolvedValue({ id: 'output-1', agentType: 'MARKETER' })
 
-            const execution = await prisma.execution.findUnique({ where: { id: executionId } });
-            expect(execution?.status).toBe('COMPLETED');
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/callback',
+      headers: { 'x-internal-api-token': INTERNAL_TOKEN },
+      payload: {
+        executionId: EXECUTION_ID,
+        agentType: 'MARKETER',
+        output: 'Marketing strategy brief',
+        iteration: 1,
+        status: 'completed',
+      },
+    })
 
-            const task = await prisma.task.findUnique({ where: { id: taskId } });
-            expect(task?.status).toBe('COMPLETED');
-        });
-    });
-});
+    expect(res.statusCode).toBe(200)
+    expect(res.json().ok).toBe(true)
+    expect(db.agentOutput.create).toHaveBeenCalled()
+  })
+
+  it('200 — failed callback updates execution status', async () => {
+    db.execution.findUnique.mockResolvedValue({
+      id: EXECUTION_ID,
+      taskId: TASK_ID,
+      projectId: PROJECT_ID,
+    })
+    db.execution.update.mockResolvedValue({})
+    db.task.update.mockResolvedValue({})
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/callback',
+      headers: { 'x-internal-api-token': INTERNAL_TOKEN },
+      payload: {
+        executionId: EXECUTION_ID,
+        agentType: 'MARKETER',
+        output: '',
+        iteration: 1,
+        status: 'failed',
+        error: 'Agent timed out',
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(db.execution.update).toHaveBeenCalled()
+    expect(db.task.update).toHaveBeenCalled()
+  })
+
+  it('404 — execution not found', async () => {
+    db.execution.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/callback',
+      headers: { 'x-internal-api-token': INTERNAL_TOKEN },
+      payload: {
+        executionId: EXECUTION_ID,
+        agentType: 'MARKETER',
+        output: 'output',
+        iteration: 1,
+        status: 'completed',
+      },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── POST /api/internal/execution-complete ────────────────────────────────────
+
+describe('POST /api/internal/execution-complete', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('200 — marks execution COMPLETED and task AWAITING_APPROVAL', async () => {
+    db.execution.findUnique.mockResolvedValue({
+      id: EXECUTION_ID,
+      taskId: TASK_ID,
+      projectId: PROJECT_ID,
+    })
+    db.execution.update.mockResolvedValue({ id: EXECUTION_ID, status: 'COMPLETED' })
+    db.task.update.mockResolvedValue({ id: TASK_ID, status: 'AWAITING_APPROVAL' })
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/execution-complete',
+      headers: { 'x-internal-api-token': INTERNAL_TOKEN },
+      payload: { executionId: EXECUTION_ID },
+    })
+
+    expect(res.statusCode).toBe(200)
+    // Task status set to AWAITING_APPROVAL, not COMPLETED
+    const taskUpdateCall = db.task.update.mock.calls[0][0]
+    expect(taskUpdateCall.data.status).toBe('AWAITING_APPROVAL')
+  })
+
+  it('200 — iterationsFailed=true sets requiresReview on task', async () => {
+    db.execution.findUnique.mockResolvedValue({
+      id: EXECUTION_ID,
+      taskId: TASK_ID,
+      projectId: PROJECT_ID,
+    })
+    db.execution.update.mockResolvedValue({})
+    db.task.update.mockResolvedValue({})
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/execution-complete',
+      headers: { 'x-internal-api-token': INTERNAL_TOKEN },
+      payload: { executionId: EXECUTION_ID, iterationsFailed: true },
+    })
+
+    expect(res.statusCode).toBe(200)
+    const taskUpdateCall = db.task.update.mock.calls[0][0]
+    expect(taskUpdateCall.data.requiresReview).toBe(true)
+  })
+
+  it('401 — no internal token', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/execution-complete',
+      payload: { executionId: EXECUTION_ID },
+    })
+    expect(res.statusCode).toBe(401)
+  })
+})
+
+// ─── POST /api/internal/agent-completion ─────────────────────────────────────
+
+describe('POST /api/internal/agent-completion', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('200 — returns AI output', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/agent-completion',
+      headers: { 'x-internal-api-token': INTERNAL_TOKEN },
+      payload: {
+        systemPrompt: 'You are a marketing expert.',
+        userMessage: 'Write a brief for a social media campaign.',
+      },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.output).toBe('AI generated output')
+  })
+
+  it('400 — missing required fields', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/agent-completion',
+      headers: { 'x-internal-api-token': INTERNAL_TOKEN },
+      payload: { systemPrompt: 'You are a marketing expert.' },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('401 — no internal token', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/internal/agent-completion',
+      payload: { systemPrompt: 'You are a marketing expert.', userMessage: 'Do something.' },
+    })
+    expect(res.statusCode).toBe(401)
+  })
+})
