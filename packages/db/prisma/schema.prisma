@@ -1,0 +1,381 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [pgvector(map: "vector", schema: "public"), uuid_ossp(map: "uuid-ossp", schema: "public")]
+}
+
+// ─── Users & Projects ────────────────────────────────────────────────────────
+
+model User {
+  id            String        @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email         String        @unique
+  passwordHash  String        @map("password_hash")
+  name          String?
+  platformRole  PlatformRole  @default(USER) @map("platform_role")
+  emailVerified Boolean       @default(false) @map("email_verified")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  ownedProjects   Project[]       @relation("ProjectOwner")
+  projectMembers  ProjectMember[]
+
+  @@map("users")
+}
+
+model Project {
+  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  ownerId   String   @map("owner_id") @db.Uuid
+  name      String
+  settings  Json     @default("{}")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  owner          User            @relation("ProjectOwner", fields: [ownerId], references: [id])
+  members        ProjectMember[]
+  profile        ProjectProfile?
+  tasks          Task[]
+  knowledgeItems KnowledgeItem[]
+  files          File[]
+  billing        Billing?
+
+  @@map("projects")
+}
+
+model ProjectMember {
+  id        String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId    String     @map("user_id") @db.Uuid
+  projectId String     @map("project_id") @db.Uuid
+  role      MemberRole @default(MEMBER)
+  createdAt DateTime   @default(now()) @map("created_at")
+
+  user    User    @relation(fields: [userId], references: [id])
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@unique([userId, projectId])
+  @@map("project_members")
+}
+
+// ─── Project Profile (§6.3 / §12.1 ТЗ) ─────────────────────────────────────
+// Хранит бизнес-контекст клиента: компания, ЦА, УТП, конкуренты, TOV.
+// Агенты автоматически загружают профиль при каждом обращении.
+
+model ProjectProfile {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId   String   @unique @map("project_id") @db.Uuid
+  // Tier 1 — обязательный минимум
+  companyName String   @map("company_name")
+  description String
+  niche       String
+  geography   String   @default("Russia")
+  // Tier 2 — рекомендуется
+  products    Json     @default("[]")       // [{name, description, price}]
+  audience    Json     @default("[]")       // [{segment, portrait, pain_points}]
+  usp         String?                       // Уникальное торговое предложение
+  competitors Json     @default("[]")       // [{name, url, positioning}]
+  tov         ToneOfVoice @default(FRIENDLY) @map("tone_of_voice")
+  keywords    String[] @default([])         // Обязательные слова/фразы
+  forbidden   String[] @default([])         // Запрещённые слова/фразы
+  references  Json     @default("[]")       // [{url, description}] примеры контента
+  // Tier 3 — полный профиль
+  websiteUrl  String?  @map("website_url")
+  socialLinks Json     @default("{}")       // {instagram, telegram, vk, youtube}
+  kpi         Json     @default("{}")       // {cac, ltv, conversion_rate, avg_check}
+  existingContent String? @map("existing_content") // описание уже опубликованного контента
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@map("project_profiles")
+}
+
+// ─── Tasks & Executions ──────────────────────────────────────────────────────
+
+model Task {
+  id                String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId         String     @map("project_id") @db.Uuid
+  input             String
+  score             Int        @default(0)
+  status            TaskStatus @default(PENDING)
+  scenario          ScenarioType?
+  clarificationNote String?    @map("clarification_note") // вопросы агента при score 25-39
+  rejectedAt        DateTime?  @map("rejected_at")
+  // true when Scenario D exhausted all iterations without evaluator pass.
+  // Signals that human review is required before approving the output.
+  requiresReview    Boolean    @default(false) @map("requires_review")
+  createdAt         DateTime   @default(now()) @map("created_at")
+  updatedAt         DateTime   @updatedAt @map("updated_at")
+
+  project       Project       @relation(fields: [projectId], references: [id])
+  executions    Execution[]
+  conversations Conversation[]
+  approvals     Approval[]
+  feedback      AgentFeedback[]
+  files         File[]
+
+  @@index([projectId])
+  @@index([status])
+  @@map("tasks")
+}
+
+model Execution {
+  id         String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  taskId     String          @map("task_id") @db.Uuid
+  projectId  String          @map("project_id") @db.Uuid
+  scenario   ScenarioType
+  status     ExecutionStatus @default(RUNNING)
+  createdAt  DateTime        @default(now()) @map("created_at")
+  finishedAt DateTime?       @map("finished_at")
+
+  task         Task          @relation(fields: [taskId], references: [id])
+  agentOutputs AgentOutput[]
+
+  @@index([taskId])
+  @@index([projectId])
+  @@map("executions")
+}
+
+model AgentOutput {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  executionId String    @map("execution_id") @db.Uuid
+  agentType   AgentType
+  output      String
+  iteration   Int       @default(1)
+  evalScore   Int?      @map("eval_score")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  execution Execution @relation(fields: [executionId], references: [id])
+
+  @@index([executionId])
+  @@map("agent_outputs")
+}
+
+// ─── Conversations (§5.1 / §11.3 ТЗ) ────────────────────────────────────────
+// История диалогов клиента с агентами: уточнения, вопросы, правки.
+
+model Conversation {
+  id        String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String           @map("project_id") @db.Uuid
+  taskId    String?          @map("task_id") @db.Uuid
+  role      ConversationRole
+  content   String
+  agentType AgentType?       @map("agent_type")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  task Task? @relation(fields: [taskId], references: [id])
+
+  @@index([projectId])
+  @@index([taskId])
+  @@map("conversations")
+}
+
+// ─── Files (§9.3 / §8 ТЗ) ───────────────────────────────────────────────────
+// Метаданные загруженных файлов. Бинарные данные хранятся в MinIO/S3.
+
+model File {
+  id         String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId  String   @map("project_id") @db.Uuid
+  taskId     String?  @map("task_id") @db.Uuid
+  filename   String
+  mimeType   String   @map("mime_type")
+  sizeBytes  Int      @map("size_bytes")
+  storagePath String  @map("storage_path") // /projects/{project_id}/{task_id}/{filename}
+  purpose    FilePurpose @default(TASK_INPUT)
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id])
+  task    Task?   @relation(fields: [taskId], references: [id])
+
+  @@index([projectId])
+  @@index([taskId])
+  @@map("files")
+}
+
+// ─── Approvals (§11.4 ТЗ) ───────────────────────────────────────────────────
+// История согласований задач. До 3 итераций правок, затем подключение менеджера.
+
+model Approval {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId   String         @map("project_id") @db.Uuid
+  taskId      String         @map("task_id") @db.Uuid
+  decision    ApprovalDecision
+  comment     String?
+  iteration   Int            @default(1)
+  decidedById String?        @map("decided_by_id") @db.Uuid
+  createdAt   DateTime       @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id])
+
+  @@index([taskId])
+  @@index([projectId])
+  @@map("approvals")
+}
+
+// ─── Agent Feedback (§9.1 ТЗ) ────────────────────────────────────────────────
+// Оценки и обратная связь по результатам работы агентов.
+
+model AgentFeedback {
+  id          String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId   String    @map("project_id") @db.Uuid
+  taskId      String    @map("task_id") @db.Uuid
+  agentType   AgentType @map("agent_type")
+  score       Int       // 1-5
+  comment     String?
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  task Task @relation(fields: [taskId], references: [id])
+
+  @@index([taskId])
+  @@index([projectId])
+  @@map("agent_feedback")
+}
+
+// ─── Knowledge DB ─────────────────────────────────────────────────────────────
+
+model KnowledgeItem {
+  id        String            @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId String            @map("project_id") @db.Uuid
+  category  KnowledgeCategory
+  content   String
+  metadata  Json              @default("{}")
+  createdAt DateTime          @default(now()) @map("created_at")
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@index([projectId, category])
+  @@map("knowledge_items")
+}
+
+// ─── Billing (§9.1 ТЗ) ───────────────────────────────────────────────────────
+
+model Billing {
+  id          String      @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId   String      @unique @map("project_id") @db.Uuid
+  plan        BillingPlan @default(FREE)
+  tasksLimit  Int         @default(10) @map("tasks_limit")
+  tasksUsed   Int         @default(0) @map("tasks_used")
+  tokensUsed  BigInt      @default(0) @map("tokens_used")
+  periodStart DateTime    @default(now()) @map("period_start")
+  periodEnd   DateTime?   @map("period_end")
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+
+  project Project @relation(fields: [projectId], references: [id])
+
+  @@map("billing")
+}
+
+// ─── Enums ────────────────────────────────────────────────────────────────────
+
+enum PlatformRole {
+  SUPER_ADMIN
+  MANAGER
+  USER
+
+  @@map("platform_role")
+}
+
+enum MemberRole {
+  OWNER
+  MEMBER
+  VIEWER
+
+  @@map("member_role")
+}
+
+enum ToneOfVoice {
+  OFFICIAL
+  FRIENDLY
+  EXPERT
+  PROVOCATIVE
+
+  @@map("tone_of_voice")
+}
+
+enum TaskStatus {
+  PENDING
+  REJECTED
+  AWAITING_CLARIFICATION
+  AWAITING_APPROVAL
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+
+  @@map("task_status")
+}
+
+enum ScenarioType {
+  A
+  B
+  C
+  D
+
+  @@map("scenario_type")
+}
+
+enum ExecutionStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+
+  @@map("execution_status")
+}
+
+enum AgentType {
+  MARKETER
+  CONTENT_MAKER
+  EVALUATOR
+
+  @@map("agent_type")
+}
+
+enum KnowledgeCategory {
+  FRAMEWORK
+  CASE
+  TEMPLATE
+  SEO
+  PLATFORM_SPEC
+  BRAND_GUIDE
+
+  @@map("knowledge_category")
+}
+
+enum ConversationRole {
+  USER
+  AGENT
+  SYSTEM
+
+  @@map("conversation_role")
+}
+
+enum FilePurpose {
+  TASK_INPUT
+  TASK_OUTPUT
+  BRAND_ASSET
+  REFERENCE
+
+  @@map("file_purpose")
+}
+
+enum ApprovalDecision {
+  APPROVED
+  REJECTED
+  REVISION_REQUESTED
+
+  @@map("approval_decision")
+}
+
+enum BillingPlan {
+  FREE
+  BASIC
+  PROFESSIONAL
+  ENTERPRISE
+
+  @@map("billing_plan")
+}

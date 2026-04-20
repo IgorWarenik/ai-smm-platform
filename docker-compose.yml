@@ -1,0 +1,212 @@
+services:
+  # PostgreSQL with pgvector extension
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: ai-marketing-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aimarketer}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_password_change_me}
+      POSTGRES_DB: ${POSTGRES_DB:-ai_marketing}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-aimarketer}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-marketing-net
+
+  # Redis — session cache + n8n queue backend
+  redis:
+    image: redis:7-alpine
+    container_name: ai-marketing-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-marketing-net
+
+  # Fastify API Gateway (Node.js — apps/api)
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: ai-marketing-api
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-aimarketer}:${POSTGRES_PASSWORD:-secure_password_change_me}@postgres:5432/${POSTGRES_DB:-ai_marketing}
+      - REDIS_URL=redis://redis:6379/0
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - CLAUDE_TOKEN_LIMIT=${CLAUDE_TOKEN_LIMIT:-500000}
+      - VOYAGE_TOKEN_LIMIT=${VOYAGE_TOKEN_LIMIT:-250000}
+      - EMBED_CACHE_TTL_SECONDS=${EMBED_CACHE_TTL_SECONDS:-86400}
+      - AGENT_RESPONSE_CACHE_TTL_SECONDS=${AGENT_RESPONSE_CACHE_TTL_SECONDS:-86400}
+      - AGENT_TELEMETRY_TTL_SECONDS=${AGENT_TELEMETRY_TTL_SECONDS:-2592000}
+      - AGENT_TELEMETRY_MAX_EVENTS=${AGENT_TELEMETRY_MAX_EVENTS:-10000}
+      - MAX_TOKENS_SCORING=${MAX_TOKENS_SCORING:-512}
+      - MAX_TOKENS_EVALUATOR_JSON=${MAX_TOKENS_EVALUATOR_JSON:-1024}
+      - MAX_EVALUATOR_CONTENT_CHARS=${MAX_EVALUATOR_CONTENT_CHARS:-1800}
+      - MAX_TOKENS_MARKETER_BRIEF=${MAX_TOKENS_MARKETER_BRIEF:-2400}
+      - MAX_TOKENS_CONTENT_GENERATION=${MAX_TOKENS_CONTENT_GENERATION:-4096}
+      - MAX_TOKENS_REVISION_DELTA=${MAX_TOKENS_REVISION_DELTA:-1500}
+      - MIN_REVISION_FEEDBACK_CHARS=${MIN_REVISION_FEEDBACK_CHARS:-40}
+      - RAG_MAX_CHARS_PER_CHUNK=${RAG_MAX_CHARS_PER_CHUNK:-1200}
+      - RAG_MAX_TOTAL_CHARS=${RAG_MAX_TOTAL_CHARS:-4000}
+      - RAG_MIN_SIMILARITY=${RAG_MIN_SIMILARITY:-0.72}
+      - CLAUDE_INPUT_COST_PER_MTOKENS=${CLAUDE_INPUT_COST_PER_MTOKENS:-0}
+      - CLAUDE_OUTPUT_COST_PER_MTOKENS=${CLAUDE_OUTPUT_COST_PER_MTOKENS:-0}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_REFRESH_SECRET=${JWT_REFRESH_SECRET}
+      - N8N_WEBHOOK_URL=http://n8n:5678/webhook
+      - N8N_API_KEY=${N8N_API_KEY}
+      - API_BASE_URL=${API_BASE_URL:-http://api:3001}
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - MINIO_ENDPOINT=minio
+      - MINIO_PORT=9000
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - NODE_ENV=production
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      n8n:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - ai-marketing-net
+    restart: unless-stopped
+
+  # n8n — AI agent orchestration (scenarios A/B/C/D)
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: ai-marketing-n8n
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=${POSTGRES_DB:-ai_marketing}
+      - DB_POSTGRESDB_USER=${POSTGRES_USER:-aimarketer}
+      - DB_POSTGRESDB_PASSWORD=${POSTGRES_PASSWORD:-secure_password_change_me}
+      - DB_POSTGRESDB_SCHEMA=n8n
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_API_KEY=${N8N_API_KEY}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - VOYAGE_API_KEY=${VOYAGE_API_KEY}
+      - API_BASE_URL=http://api:3001
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN}
+      - MAX_TOKENS_EVALUATOR_JSON=${MAX_TOKENS_EVALUATOR_JSON:-1024}
+      - MAX_EVALUATOR_CONTENT_CHARS=${MAX_EVALUATOR_CONTENT_CHARS:-1800}
+      - MAX_TOKENS_MARKETER_BRIEF=${MAX_TOKENS_MARKETER_BRIEF:-2400}
+      - MAX_TOKENS_CONTENT_GENERATION=${MAX_TOKENS_CONTENT_GENERATION:-4096}
+      - MAX_TOKENS_REVISION_DELTA=${MAX_TOKENS_REVISION_DELTA:-1500}
+      - MIN_REVISION_FEEDBACK_CHARS=${MIN_REVISION_FEEDBACK_CHARS:-40}
+      - RAG_MAX_CHARS_PER_CHUNK=${RAG_MAX_CHARS_PER_CHUNK:-1200}
+      - RAG_MAX_TOTAL_CHARS=${RAG_MAX_TOTAL_CHARS:-4000}
+      - RAG_MIN_SIMILARITY=${RAG_MIN_SIMILARITY:-0.72}
+      - EXECUTIONS_MODE=queue
+      - GENERIC_TIMEZONE=Europe/Moscow
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - ai-marketing-net
+    restart: unless-stopped
+
+  # MinIO — S3-compatible file storage (brand assets, task files)
+  minio:
+    image: minio/minio:latest
+    container_name: ai-marketing-minio
+    environment:
+      - MINIO_ROOT_USER=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_ROOT_PASSWORD=${MINIO_SECRET_KEY:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/minio_data
+    command: server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - ai-marketing-net
+    restart: unless-stopped
+
+  # Next.js frontend (apps/frontend)
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/frontend/Dockerfile
+    container_name: ai-marketing-frontend
+    environment:
+      - NEXT_PUBLIC_API_URL=${API_BASE_URL:-http://localhost:3001}
+      - NODE_ENV=production
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - ai-marketing-net
+    restart: unless-stopped
+
+  # Prometheus — metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ai-marketing-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    ports:
+      - "9090:9090"
+    networks:
+      - ai-marketing-net
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  minio_data:
+  n8n_data:
+  prometheus_data:
+
+networks:
+  ai-marketing-net:
+    driver: bridge

@@ -1,0 +1,60 @@
+import Fastify from 'fastify'
+import cors from '@fastify/cors'
+import sensible from '@fastify/sensible'
+import { ZodError } from 'zod'
+import { jwtPlugin } from './plugins/jwt'
+import { authRoutes } from './routes/auth'
+import { projectRoutes } from './routes/projects'
+import { profileRoutes } from './routes/profile'
+import { taskRoutes } from './routes/tasks'
+import { approvalRoutes } from './routes/approvals'
+import { feedbackRoutes } from './routes/feedback'
+import { knowledgeRoutes } from './routes/knowledge'
+import { callbackRoutes } from './routes/callback'
+import { renderTokenPrometheusMetrics } from '@ai-marketing/ai-engine'
+
+export async function buildApp() {
+  const app = Fastify({
+    logger: process.env.NODE_ENV !== 'test',
+  })
+
+  // ─── Plugins ───────────────────────────────────────────────
+  await app.register(cors, {
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    credentials: true,
+  })
+  await app.register(sensible)
+  await app.register(jwtPlugin)
+
+  // ─── Global error handler ──────────────────────────────────
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ZodError) {
+      return reply.code(400).send({
+        error: 'Validation failed',
+        code: 'VALIDATION_ERROR',
+        details: error.flatten().fieldErrors,
+      })
+    }
+    // Re-throw for Fastify default handling (404, 401, etc.)
+    reply.send(error)
+  })
+
+  // ─── Routes ────────────────────────────────────────────────
+  await app.register(authRoutes, { prefix: '/api/auth' })
+  await app.register(projectRoutes, { prefix: '/api/projects' })
+  await app.register(profileRoutes, { prefix: '/api/projects/:projectId/profile' })
+  await app.register(taskRoutes, { prefix: '/api/projects/:projectId/tasks' })
+  await app.register(approvalRoutes, { prefix: '/api/projects/:projectId/tasks/:taskId/approvals' })
+  await app.register(feedbackRoutes, { prefix: '/api/projects/:projectId/tasks/:taskId/feedback' })
+  await app.register(knowledgeRoutes, { prefix: '/api/projects/:projectId/knowledge' })
+  await app.register(callbackRoutes, { prefix: '/api/internal' })
+
+  // ─── Health ────────────────────────────────────────────────
+  app.get('/health', async () => ({ status: 'ok', ts: new Date().toISOString() }))
+  app.get('/metrics', async (_request, reply) => {
+    const metrics = await renderTokenPrometheusMetrics()
+    return reply.header('Content-Type', 'text/plain; version=0.0.4').send(metrics)
+  })
+
+  return app
+}

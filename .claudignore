@@ -1,0 +1,69 @@
+# --- Системные и кэш-файлы ---
+.git/
+.DS_Store
+.ipynb_checkpoints/
+
+# --- Окружение и зависимости ---
+# Игнорируем библиотеки, так как они огромные
+node_modules/
+.npm/
+
+# --- Docker ---
+# Игнорируем данные томов, чтобы Claude не пытался прочитать гигабайты БД
+docker/data/
+postgres_data/
+redis_data/
+
+# --- Специфичные для проекта (ТЗ) ---
+# Игнорируем локальные векторные базы и индексы
+db/
+*.sqlite3
+*.bin
+*.index
+*.db
+*.db-journal
+knowledge_base/raw_files/ # Чтобы не перечитывать исходные PDF каждый раз
+
+# --- Python специфичные ---
+# Игнорируем Python виртуальные среды и кэш
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+pip-log.txt
+pip-delete-this-directory.txt
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.log
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Секреты и конфиги ---
+# Важно: Claude должен знать структуру .env.example, но не видеть реальные ключи
+.env
+.env.local
+*.secrets
+*.pem
+*.key
+
+# --- Сборка фронтенда ---
+.next/
+out/
+build/
+dist/
+
+# --- Логи и временные файлы ---
+*.log
+logs/
+temp/
+tmp/

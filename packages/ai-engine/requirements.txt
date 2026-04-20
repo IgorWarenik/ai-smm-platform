@@ -1,0 +1,7 @@
+# Deprecated.
+#
+# `packages/ai-engine` is a TypeScript package. Runtime dependencies are
+# declared in `packages/ai-engine/package.json`.
+#
+# Keep this file empty unless a future Python-only script is added and documented
+# in `docs/context_map.md`.

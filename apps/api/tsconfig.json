@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "CommonJS",
+    "lib": ["ES2022"],
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "outDir": "./dist",
+    "rootDir": "../..",
+    "paths": {
+      "@ai-marketing/shared": ["../../packages/shared/src"],
+      "@ai-marketing/db": ["../../packages/db/src"],
+      "@ai-marketing/ai-engine": ["../../packages/ai-engine/src"]
+    }
+  },
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist"]
+}

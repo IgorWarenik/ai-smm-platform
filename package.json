@@ -1,0 +1,23 @@
+{
+  "name": "ai-marketing-platform",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev --workspace=apps/api",
+    "dev:frontend": "npm run dev --workspace=apps/frontend",
+    "db:migrate": "npx prisma migrate dev --schema packages/db/prisma/schema.prisma",
+    "db:seed": "npx prisma db seed --schema packages/db/prisma/schema.prisma"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "prisma": "^5.13.0",
+    "tsx": "^4.10.0",
+    "vitest": "^2.1.8"
+  },
+  "prisma": {
+    "seed": "tsx packages/db/src/seed.ts"
+  }
+}
