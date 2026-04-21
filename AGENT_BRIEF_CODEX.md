@@ -1,38 +1,83 @@
 # Agent Brief — Codex
-## Branch: `agent/backend-v2`
+## Wave 5 | Branch: `agent/hardening-v2`
 
 **Stack:** Fastify + TypeScript + Prisma. Claude is orchestrator.
 
 **Rules:**
-- New branch from main: `git checkout -b agent/backend-v2`
+- New branch from main: `git checkout -b agent/hardening-v2`
 - Work ONLY in assigned files
 - Do NOT merge — Claude reviews
-- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 4 → Codex`
-- Validation: `npx tsc --noEmit -p apps/api/tsconfig.json` + `npx vitest run` must pass
+- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 5 → Codex`
+- Validation: `npx tsc --noEmit -p apps/api/tsconfig.json` + `npx vitest run` must pass (110 currently)
 
 ---
 
 ## Your Files
 
 ```
-apps/api/src/routes/knowledge.ts      ← PRIMARY
-apps/api/tests/knowledge.test.ts      ← PRIMARY
+apps/api/src/app.ts                   ← rate limiting plugin
+apps/api/src/routes/projects.ts       ← UUID param validation + DELETE test coverage
+apps/api/src/routes/tasks.ts          ← DELETE task endpoint
+apps/api/tests/projects.test.ts       ← tests for DELETE project
+apps/api/tests/tasks.test.ts          ← tests for DELETE task + status filter
 ```
 
-Do NOT touch: tasks.ts, approvals.ts, auth.ts, projects.ts, callback.ts, profile.ts, feedback.ts, any packages/
+Do NOT touch: knowledge.ts, auth.ts, approvals.ts, feedback.ts, callback.ts, profile.ts, any packages/
 
 ---
 
-## Task 1 — DELETE /api/projects/:projectId/knowledge/:itemId
+## Task 1 — Rate limiting on auth routes
 
-**File:** `apps/api/src/routes/knowledge.ts`
+**File:** `apps/api/src/app.ts`
 
-Add after the existing `GET /` (list) handler:
+Install is already done (or use inline counter). Add `@fastify/rate-limit` registration scoped to `/api/auth`:
 
 ```typescript
-// DELETE /api/projects/:projectId/knowledge/:itemId
-app.delete('/:itemId', async (request, reply) => {
-  const { projectId, itemId } = request.params as { projectId: string; itemId: string }
+import rateLimit from '@fastify/rate-limit'
+
+// Inside buildApp(), before route registration:
+await app.register(rateLimit, {
+  global: false,          // opt-in per route
+  max: 20,
+  timeWindow: '1 minute',
+})
+```
+
+Then in `apps/api/src/routes/auth.ts`, add `config: { rateLimit: { max: 20, timeWindow: '1 minute' } }` option to the `POST /register` and `POST /login` handlers:
+
+```typescript
+app.post('/register', {
+  config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+}, async (request, reply) => {
+  // ... existing handler unchanged
+})
+
+app.post('/login', {
+  config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+}, async (request, reply) => {
+  // ... existing handler unchanged
+})
+```
+
+**If `@fastify/rate-limit` is not in package.json**, skip this task and note it as "package missing — needs install". Do NOT run npm install.
+
+**Acceptance criteria:**
+- `buildApp()` still succeeds
+- Auth route handlers still work
+- tsc passes
+
+---
+
+## Task 2 — DELETE /api/projects/:projectId/tasks/:taskId
+
+**File:** `apps/api/src/routes/tasks.ts`
+
+Add after the existing `GET /:taskId` handler:
+
+```typescript
+// DELETE /api/projects/:projectId/tasks/:taskId
+app.delete('/:taskId', async (request, reply) => {
+  const { projectId, taskId } = request.params as { projectId: string; taskId: string }
   const userId = request.user.sub
 
   const membership = await prisma.projectMember.findUnique({
@@ -40,166 +85,89 @@ app.delete('/:itemId', async (request, reply) => {
   })
   if (!membership) return reply.notFound('Project not found')
 
-  return withProjectContext(projectId, userId, async (tx) => {
-    const item = await tx.knowledgeItem.findUnique({ where: { id: itemId } })
-    if (!item || item.projectId !== projectId) return reply.notFound('Knowledge item not found')
+  const task = await prisma.task.findUnique({ where: { id: taskId } })
+  if (!task || task.projectId !== projectId) return reply.notFound('Task not found')
 
-    await tx.knowledgeItem.delete({ where: { id: itemId } })
-    return reply.code(204).send()
-  })
+  await prisma.task.delete({ where: { id: taskId } })
+  return reply.code(204).send()
 })
 ```
 
 **Acceptance criteria:**
-- Member DELETE existing item → 204 no body
+- Member DELETE existing task → 204 no body
 - Non-member → 404
-- Item from different project → 404
-- Item not found → 404
+- Task not found → 404
+- Task from different project → 404
 
 ---
 
-## Task 2 — PATCH /api/projects/:projectId/knowledge/:itemId
+## Task 3 — UUID validation helper for path params
 
-**File:** `apps/api/src/routes/knowledge.ts`
+**File:** `apps/api/src/routes/projects.ts` (and optionally tasks.ts)
 
-Add a `PatchKnowledgeItemSchema` at the top of the file (after existing imports):
-
-```typescript
-import { KnowledgeCategory } from '@ai-marketing/shared'
-
-const PatchKnowledgeItemSchema = z.object({
-  content: z.string().min(1).max(10000).optional(),
-  metadata: z.record(z.unknown()).optional(),
-  category: z.nativeEnum(KnowledgeCategory).optional(),
-})
-```
-
-Note: `z` is already imported (used by the POST handler). `KnowledgeCategory` must be imported from `@ai-marketing/shared`.
-
-Add the handler after the DELETE handler:
+Add a lightweight UUID format check at the top of the file (below imports):
 
 ```typescript
-// PATCH /api/projects/:projectId/knowledge/:itemId
-app.patch('/:itemId', async (request, reply) => {
-  const { projectId, itemId } = request.params as { projectId: string; itemId: string }
-  const userId = request.user.sub
-  const body = PatchKnowledgeItemSchema.parse(request.body)
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-  if (Object.keys(body).length === 0) {
-    return reply.badRequest('At least one field required')
+function assertUuid(reply: FastifyReply, value: string, label: string): boolean {
+  if (!UUID_RE.test(value)) {
+    reply.badRequest(`${label} must be a valid UUID`)
+    return false
   }
+  return true
+}
+```
 
-  const membership = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId, projectId } },
-  })
-  if (!membership) return reply.notFound('Project not found')
+Use it at the start of handlers that take `:projectId` and `:taskId` path params:
 
-  return withProjectContext(projectId, userId, async (tx) => {
-    const item = await tx.knowledgeItem.findUnique({ where: { id: itemId } })
-    if (!item || item.projectId !== projectId) return reply.notFound('Knowledge item not found')
-
-    const updated = await tx.knowledgeItem.update({
-      where: { id: itemId },
-      data: {
-        ...(body.content !== undefined && { content: body.content }),
-        ...(body.metadata !== undefined && { metadata: body.metadata }),
-        ...(body.category !== undefined && { category: body.category }),
-      },
-    })
-
-    // Re-embed asynchronously if content changed
-    if (body.content !== undefined) {
-      const serviceUserId = process.env.INTERNAL_SERVICE_USER_ID ?? '00000000-0000-0000-0000-000000000000'
-      embedText(body.content).then(async (vector) => {
-        await withProjectContext(projectId, serviceUserId, async (ctx) => {
-          await ctx.knowledgeItem.update({
-            where: { id: itemId },
-            data: { embedding: `[${vector.join(',')}]` },
-          })
-        })
-      }).catch((err) => {
-        console.error({ err, itemId }, 'Failed to re-embed updated knowledge item')
-      })
-    }
-
-    return reply.send({ data: updated })
-  })
+```typescript
+app.get('/:projectId', async (request, reply) => {
+  const { projectId } = request.params as { projectId: string }
+  if (!assertUuid(reply, projectId, 'projectId')) return
+  // ... rest of handler
 })
 ```
 
-**Note:** `embedText` and `withProjectContext` are already imported at the top of knowledge.ts — verify before adding duplicate imports.
+Apply to: `GET /:projectId`, `PATCH /:projectId`, `DELETE /:projectId` in `projects.ts`.
+Apply to: `GET /:taskId`, `DELETE /:taskId` in `tasks.ts`.
 
 **Acceptance criteria:**
-- PATCH content → 200 with updated item; re-embed fires async
-- PATCH category → 200 with updated category
-- PATCH empty body `{}` → 400
-- Non-member → 404
-- Item not found → 404
+- `GET /api/projects/not-a-uuid` → 400 with message "projectId must be a valid UUID"
+- Valid UUID → passes through unchanged
+- tsc passes
 
 ---
 
-## Task 3 — Update `apps/api/tests/knowledge.test.ts`
+## Task 4 — Tests
 
-Add two new describe blocks at the end of the file.
+**File:** `apps/api/tests/tasks.test.ts`
 
-### Check existing mock
-Verify the existing `vi.mock('@ai-marketing/db', ...)` factory includes `knowledgeItem.delete` and `knowledgeItem.update`. If missing, add them:
-
-```typescript
-knowledgeItem: {
-  create: vi.fn(),
-  findMany: vi.fn().mockResolvedValue([]),
-  findUnique: vi.fn(),
-  update: vi.fn(),          // ← needed for PATCH
-  delete: vi.fn(),          // ← needed for DELETE
-  count: vi.fn().mockResolvedValue(0),
-},
-```
-
-### DELETE suite
+Add at the end of the file:
 
 ```typescript
-describe('DELETE /api/projects/:projectId/knowledge/:itemId', () => {
+describe('DELETE /api/projects/:projectId/tasks/:taskId', () => {
   let app: FastifyInstance
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    db.$transaction.mockImplementation((ops: any) =>
-      Array.isArray(ops) ? Promise.all(ops) : ops(db)
-    )
-    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
     app = await buildApp()
   })
 
   afterEach(async () => { await app.close() })
 
-  it('204 — member deletes existing item', async () => {
+  it('204 — member deletes own task', async () => {
     const token = await getToken(app)
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.knowledgeItem.findUnique.mockResolvedValue({
-      id: 'item-1', projectId: PROJECT_ID,
-    })
-    db.knowledgeItem.delete.mockResolvedValue({})
+    db.task.findUnique.mockResolvedValue({ id: 'task-1', projectId: PROJECT_ID })
+    db.task.delete.mockResolvedValue({})
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      url: `/api/projects/${PROJECT_ID}/tasks/task-1`,
       headers: { authorization: `Bearer ${token}` },
     })
     expect(res.statusCode).toBe(204)
-  })
-
-  it('404 — item not found', async () => {
-    const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.knowledgeItem.findUnique.mockResolvedValue(null)
-
-    const res = await app.inject({
-      method: 'DELETE',
-      url: `/api/projects/${PROJECT_ID}/knowledge/nonexistent`,
-      headers: { authorization: `Bearer ${token}` },
-    })
-    expect(res.statusCode).toBe(404)
   })
 
   it('404 — non-member cannot delete', async () => {
@@ -208,7 +176,20 @@ describe('DELETE /api/projects/:projectId/knowledge/:itemId', () => {
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      url: `/api/projects/${PROJECT_ID}/tasks/task-1`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('404 — task not found', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/tasks/nonexistent`,
       headers: { authorization: `Bearer ${token}` },
     })
     expect(res.statusCode).toBe(404)
@@ -216,115 +197,65 @@ describe('DELETE /api/projects/:projectId/knowledge/:itemId', () => {
 })
 ```
 
-### PATCH suite
+Also add a test for the UUID validation:
 
 ```typescript
-describe('PATCH /api/projects/:projectId/knowledge/:itemId', () => {
+describe('UUID validation', () => {
   let app: FastifyInstance
 
-  beforeEach(async () => {
-    vi.clearAllMocks()
-    db.$transaction.mockImplementation((ops: any) =>
-      Array.isArray(ops) ? Promise.all(ops) : ops(db)
-    )
-    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
-    app = await buildApp()
-  })
-
+  beforeEach(async () => { app = await buildApp() })
   afterEach(async () => { await app.close() })
 
-  it('200 — updates content', async () => {
+  it('400 — invalid projectId returns bad request', async () => {
     const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.knowledgeItem.findUnique.mockResolvedValue({ id: 'item-1', projectId: PROJECT_ID })
-    db.knowledgeItem.update.mockResolvedValue({
-      id: 'item-1', projectId: PROJECT_ID, content: 'Updated content',
-      category: 'TEMPLATE',
-    })
-
     const res = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      method: 'GET',
+      url: '/api/projects/not-a-uuid',
       headers: { authorization: `Bearer ${token}` },
-      payload: { content: 'Updated content' },
-    })
-    expect(res.statusCode).toBe(200)
-    expect(res.json().data.content).toBe('Updated content')
-  })
-
-  it('400 — empty body rejected', async () => {
-    const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: {},
     })
     expect(res.statusCode).toBe(400)
   })
-
-  it('404 — non-member cannot patch', async () => {
-    const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue(null)
-
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { content: 'Updated' },
-    })
-    expect(res.statusCode).toBe(404)
-  })
-
-  it('404 — item not found', async () => {
-    const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.knowledgeItem.findUnique.mockResolvedValue(null)
-
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { content: 'Updated' },
-    })
-    expect(res.statusCode).toBe(404)
-  })
 })
 ```
 
-**Expected test count after this task:** 103 existing + 7 new = **110 passing**
+Check existing mock in tasks.test.ts — add `delete: vi.fn()` to `task` mock if missing.
+
+**Expected test count after this wave:** 110 + ~4 = **~114 passing**
 
 ---
 
 ## Architecture context
 
 ```
-apps/api/src/routes/knowledge.ts — current routes:
-  POST   /                  → create knowledge item
-  GET    /search            → semantic search (?q=)
-  GET    /                  → list (paginated)
-  ← ADD: DELETE /:itemId   → delete item
-  ← ADD: PATCH  /:itemId   → update item
+Current passing tests: 110
+Target: ≥114
 
-Existing imports in knowledge.ts (do NOT duplicate):
-  import { prisma, withProjectContext } from '@ai-marketing/db'
-  import { embedText, ... } from '@ai-marketing/ai-engine'
-  import z from 'zod'
+Existing task mock in tasks.test.ts:
+  task: { create, findMany, findUnique, count }
+  ← Need to ADD: task.delete mock
+
+Existing project routes (projects.ts):
+  POST   /                    create
+  GET    /                    list
+  GET    /:projectId          get one
+  PATCH  /:projectId          update
+  DELETE /:projectId          delete (already exists!)
+  POST   /:projectId/members  add member
+
+UUID_RE helper goes in BOTH projects.ts and tasks.ts as a module-level const.
 ```
 
 ---
 
 ## How to submit
 
-1. `git checkout -b agent/backend-v2` from main
+1. `git checkout -b agent/hardening-v2` from main
 2. Make changes
 3. `npx tsc --noEmit -p apps/api/tsconfig.json` — zero errors
-4. `npx vitest run` — 110/110 pass
+4. `npx vitest run` — all pass
 5. Commit with descriptive message
-6. Write report in `AGENTS_CHAT.md` under `## Wave 4 → Codex`:
+6. Write report in `AGENTS_CHAT.md` under `## Wave 5 → Codex`:
    - What was done
-   - Test count: 103 → 110
-   - Any deviations
-7. Tell the human "done, agent/backend-v2 ready for review"
+   - Test count before → after
+   - Any deviations (especially if @fastify/rate-limit was missing)
+7. Tell the human "done, agent/hardening-v2 ready for review"
