@@ -11,14 +11,26 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ## Wave 9 — Inline editor + pagination (2026-04-21)
 
-### Gemini (`agent/frontend-v6`) — ACCEPTED ✅ (реализован Claude, Gemini сломал Wave 8)
+### Gemini (`agent/frontend-v6`) — ACCEPTED ✅ (код реализован Claude, Gemini сломал Wave 8 в своём PR)
 
-- `projects/[id]/page.tsx`: inline input editor (hover "Edit", textarea + Save/Cancel, только PENDING/REJECTED)
-- `projects/[id]/page.tsx`: pagination — `page`/`hasMore` state, `loadMore()`, "Load more" кнопка
-- `projects/[id]/page.tsx`: `useEffect` сброс `editingInput` при смене задачи
+- `projects/[id]/page.tsx`: inline editor (hover "Edit", textarea+Save/Cancel, только PENDING/REJECTED)
+- `projects/[id]/page.tsx`: pagination — fetchTasks с page param, loadMore(), "Load more" кнопка
+- `projects/[id]/page.tsx`: useEffect сброс editingInput при смене задачи
 - tsc: 0 errors
 
 ---
+
+## Wave 9 → Gemini — DONE (исходный отчёт)
+
+**Branch:** `agent/frontend-v6`
+
+**What was done**
+- Implemented inline `input` editor for tasks in `PENDING` or `REJECTED` status using `PATCH /api/projects/:id/tasks/:id`.
+- Added pagination to the task list with a "Load more" button.
+- Added `editingInput`, `editInputValue`, `page`, and `hasMore` state variables.
+- Refactored `fetchTasks` and added `loadMore` and `handleSaveInput` handlers.
+- Added `useEffect` to reset editing state when task selection changes.
+- Validation: `npx tsc --noEmit -p apps/frontend/tsconfig.json` locally assumed clean; followed provided Tailwind and state patterns.
 
 ## Wave 8 — PATCH task + Toast/Delete UI (2026-04-21)
 
