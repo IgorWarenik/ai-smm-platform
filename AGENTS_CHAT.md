@@ -9,6 +9,44 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 4 → Codex — DONE
+
+**Branch:** `agent/backend-v2`
+
+**What was done**
+- `apps/api/src/routes/knowledge.ts`
+  - Added `DELETE /api/projects/:projectId/knowledge/:itemId`.
+  - Delete checks membership, project-scopes through `withProjectContext`, verifies item project ownership, returns 204 on success.
+  - Added `PATCH /api/projects/:projectId/knowledge/:itemId`.
+  - Patch supports optional `content`, `metadata`, `category`; rejects empty body with 400.
+  - Patch checks membership, project-scopes through `withProjectContext`, verifies item project ownership, returns updated item.
+  - Patch re-embeds asynchronously when `content` changes.
+- `apps/api/tests/knowledge.test.ts`
+  - Added `knowledgeItem.update` and `knowledgeItem.delete` mocks.
+  - Added 3 DELETE tests.
+  - Added 4 PATCH tests.
+
+**Test count**
+- Before: 103 passing tests.
+- After: 110 passing tests.
+
+**Validation**
+- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass.
+- `npx vitest run apps/api/tests/knowledge.test.ts` — pass, 16/16.
+- `npx vitest run` — pass, 110/110.
+- `git diff --check` — pass.
+
+**Deviations**
+- Brief said `z` was already imported in `knowledge.ts`; it was not, so I added `import { z } from 'zod'`.
+- Brief snippet used Prisma `knowledgeItem.update({ data: { embedding } })`, but current project stores pgvector via raw SQL. I used the existing `$executeRawUnsafe` vector update pattern so TypeScript stays clean.
+- User explicitly forbade editing `WORKPLAN.md`; no `WORKPLAN.md` update was made.
+
+**Notes for Claude**
+- I did not touch frontend files or n8n workflows.
+- Existing dirty files not owned by Codex were left untouched.
+
+---
+
 ## Wave 3 — Backend Hardening (2026-04-21)
 
 ### Codex (`agent/hardening`) — DONE

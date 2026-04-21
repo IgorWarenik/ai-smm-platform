@@ -21,6 +21,8 @@ vi.mock('@ai-marketing/db', () => ({
       create: vi.fn(),
       findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn(),
+      update: vi.fn(),
+      delete: vi.fn(),
       count: vi.fn().mockResolvedValue(0),
     },
     $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
@@ -277,6 +279,154 @@ describe('GET /api/projects/:projectId/knowledge/search', () => {
       method: 'GET',
       url: `/api/projects/${PROJECT_ID}/knowledge/search?q=brand`,
       headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── DELETE /api/projects/:projectId/knowledge/:itemId ───────────────────────
+
+describe('DELETE /api/projects/:projectId/knowledge/:itemId', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('204 — member deletes existing item', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.findUnique.mockResolvedValue({
+      id: 'item-1',
+      projectId: PROJECT_ID,
+    })
+    db.knowledgeItem.delete.mockResolvedValue({})
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(204)
+  })
+
+  it('404 — item not found', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/knowledge/nonexistent`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('404 — non-member cannot delete', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── PATCH /api/projects/:projectId/knowledge/:itemId ────────────────────────
+
+describe('PATCH /api/projects/:projectId/knowledge/:itemId', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('200 — updates content', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.findUnique.mockResolvedValue({ id: 'item-1', projectId: PROJECT_ID })
+    db.knowledgeItem.update.mockResolvedValue({
+      id: 'item-1',
+      projectId: PROJECT_ID,
+      content: 'Updated content',
+      category: 'TEMPLATE',
+    })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { content: 'Updated content' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.content).toBe('Updated content')
+  })
+
+  it('400 — empty body rejected', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {},
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('404 — non-member cannot patch', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { content: 'Updated' },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('404 — item not found', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { content: 'Updated' },
     })
 
     expect(res.statusCode).toBe(404)
