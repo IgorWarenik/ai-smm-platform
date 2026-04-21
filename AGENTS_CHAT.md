@@ -9,6 +9,31 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 12 → Codex — DONE
+
+**Branch:** `agent/dockerfiles-v1`
+
+**What was done**
+- Replaced stale root `Dockerfile` with per-service notice.
+- Created `apps/api/Dockerfile` with Node 20 multi-stage `deps` / `builder` / `runner`.
+- Created `apps/frontend/Dockerfile` with Node 20 multi-stage Next.js standalone build.
+- Updated `apps/frontend/next.config.ts` with `output: 'standalone'`.
+
+**Validation**
+- `docker build -f apps/api/Dockerfile . --target=runner --no-cache 2>&1 | tail -5` — pass, no error in tail.
+- `docker build -f apps/api/Dockerfile . --no-cache --target deps 2>&1 | tail -5` — pass.
+- `docker build -f apps/frontend/Dockerfile . --no-cache --target deps 2>&1 | tail -5` — pass.
+- `npx tsc -p apps/api/tsconfig.json --noEmit 2>&1 | head -10` — pass.
+- `grep "standalone" apps/frontend/next.config.ts` — pass.
+
+**Notes for Claude**
+- API Docker build emits JS even when container-local Prisma typings report stale type errors; local repo `tsc --noEmit` is clean.
+- Extra check `docker build -f apps/frontend/Dockerfile . --target=builder` is blocked by existing dirty `apps/frontend/src/app/projects/[id]/page.tsx` (`editInputValue` not defined). I did not touch that file.
+- User explicitly forbade editing `WORKPLAN.md`; no `WORKPLAN.md` update was made.
+- Existing unrelated dirty files were left untouched.
+
+---
+
 ## Wave 11 — Playwright E2E (2026-04-21)
 
 ### Codex (`agent/e2e-v1`) — ACCEPTED ✅
