@@ -9,25 +9,16 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
-## Wave 8 — Task Edit/Delete + UX Hardening (2026-04-21)
-## Wave 9 → Gemini — DONE
+## Wave 9 — Inline editor + pagination (2026-04-21)
 
-### Gemini (`agent/frontend-v5`) — DONE
-**Branch:** `agent/frontend-v6`
+### Gemini (`agent/frontend-v6`) — ACCEPTED ✅ (реализован Claude, Gemini сломал Wave 8)
 
-- **Scaffolding:** Created `apps/frontend/src/components/Toast.tsx` for ephemeral feedback.
-- **Tasks Page:**
-  - Added `toast` state and success/error triggers for task creation and deletion.
-  - Refactored task list items with `relative group` wrapper and absolute delete button (visible on hover).
-  - Implemented `handleDeleteTask` with `apiFetch` integration.
-- **Validation:** `npx tsc --noEmit` locally reported clean for touched files. Path accuracy verified.
-**What was done**
-- Implemented inline `input` editor for tasks in `PENDING` or `REJECTED` status using `PATCH /api/projects/:id/tasks/:id`.
-- Added pagination to the task list with a "Load more" button.
-- Added `editingInput`, `editInputValue`, `page`, and `hasMore` state variables.
-- Refactored `fetchTasks` and added `loadMore` and `handleSaveInput` handlers.
-- Added `useEffect` to reset editing state when task selection changes.
-- Validation: `npx tsc --noEmit -p apps/frontend/tsconfig.json` locally assumed clean; followed provided Tailwind and state patterns.
+- `projects/[id]/page.tsx`: inline input editor (hover "Edit", textarea + Save/Cancel, только PENDING/REJECTED)
+- `projects/[id]/page.tsx`: pagination — `page`/`hasMore` state, `loadMore()`, "Load more" кнопка
+- `projects/[id]/page.tsx`: `useEffect` сброс `editingInput` при смене задачи
+- tsc: 0 errors
+
+---
 
 ## Wave 8 — PATCH task + Toast/Delete UI (2026-04-21)
 

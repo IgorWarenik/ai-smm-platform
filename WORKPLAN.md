@@ -6,7 +6,7 @@
 
 ## Статус проекта
 
-**Готовность MVP: 95%** `[█████████░]`
+**Готовность MVP: 97%** `[█████████░]`
 **Тесты:** 125 / ~135 (цель) — unit, нет E2E
 **Ветка:** `main` | Последний merge: Wave 8
 
@@ -14,7 +14,7 @@
 
 | # | Блок | Приоритет | Статус |
 |---|------|-----------|--------|
-| W9 | **Wave 9** — Inline task editor + pagination UI | 🔴 HIGH | ⏳ Gemini в работе |
+| W9 | **Wave 9** — Inline task editor + pagination UI | 🔴 HIGH | ✅ смержен |
 | E1 | **E2E-тесты** — Playwright: login→create task→approve flow | 🟡 MED | ❌ не начато |
 | E2 | **n8n workflows push** — `docker-compose up` + `n8nac push` ×5 | 🟡 MED | ⚠️ config OK, push pending |
 | E3 | **Production deploy** — cloud env, secrets, smoke test | 🟡 MED | ❌ не начато |
