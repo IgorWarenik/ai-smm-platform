@@ -1,183 +1,242 @@
 # Agent Brief — Codex
-## Wave 8 | Branch: `agent/hardening-v5`
+## Wave 11 | Branch: `agent/e2e-v1`
 
-**Stack:** Fastify + TypeScript + Prisma. Claude is orchestrator.
+**Stack:** Playwright + TypeScript. Тестирует Next.js frontend (port 3000) против реального Fastify API (port 3001).
 
 **Rules:**
-- New branch from main: `git checkout -b agent/hardening-v5`
-- Work ONLY in assigned files
+- New branch from main: `git checkout -b agent/e2e-v1`
+- Work ONLY in assigned files (все новые — в `apps/e2e/`)
+- Do NOT touch any existing files
 - Do NOT merge — Claude reviews
-- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 8 → Codex`
-- Validation: `npx tsc --noEmit -p apps/api/tsconfig.json` + `npx vitest run` (121 currently)
+- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 11 → Codex`
+- Validation: `cd apps/e2e && npm install && npx playwright install chromium && npx playwright test --list`
+  (--list не запускает тесты, только проверяет синтаксис и обнаружение)
 
 ---
 
-## Your Files
+## Your Files (all new)
 
 ```
-apps/api/src/routes/tasks.ts        ← add PATCH /:taskId
-apps/api/tests/tasks.test.ts        ← tests for PATCH
+apps/e2e/package.json
+apps/e2e/playwright.config.ts
+apps/e2e/tests/auth.spec.ts
+apps/e2e/tests/projects.spec.ts
+apps/e2e/.gitignore
 ```
-
-Do NOT touch any other files.
 
 ---
 
-## Task 1 — PATCH /api/projects/:projectId/tasks/:taskId
+## File: `apps/e2e/package.json`
 
-Allow updating a task's `input` field when the task is in `PENDING` or `REJECTED` status. All other statuses must return 400.
-
-**File:** `apps/api/src/routes/tasks.ts`
-
-Add after the existing `DELETE /:taskId` handler (before the `POST /:taskId/execute` handler):
-
-```typescript
-// PATCH /api/projects/:projectId/tasks/:taskId
-app.patch('/:taskId', async (request, reply) => {
-  const { projectId, taskId } = request.params as { projectId: string; taskId: string }
-  if (!assertUuid(reply, projectId, 'projectId')) return
-  if (!assertUuid(reply, taskId, 'taskId')) return
-  const userId = request.user.sub
-
-  const body = z.object({ input: z.string().min(1).max(5000) }).parse(request.body)
-
-  const membership = await prisma.projectMember.findUnique({
-    where: { userId_projectId: { userId, projectId } },
-  })
-  if (!membership) return reply.notFound('Project not found')
-
-  const task = await prisma.task.findUnique({ where: { id: taskId } })
-  if (!task || task.projectId !== projectId) return reply.notFound('Task not found')
-
-  const editableStatuses: string[] = ['PENDING', 'REJECTED']
-  if (!editableStatuses.includes(task.status)) {
-    return reply.badRequest(`Task cannot be edited in status ${task.status}`)
+```json
+{
+  "name": "@ai-marketing/e2e",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:ui": "playwright test --ui",
+    "test:list": "playwright test --list"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.44.0"
   }
-
-  const updated = await prisma.task.update({
-    where: { id: taskId },
-    data: { input: body.input },
-  })
-
-  return reply.send({ data: updated })
-})
+}
 ```
-
-You will need to import `z` from `zod` at the top of the file if it's not already imported. Check first — do NOT add a duplicate import.
-
-**Acceptance criteria:**
-- PENDING task → 200 `{ data: { id, input, status, ... } }`
-- REJECTED task → 200
-- Task in any other status (e.g. RUNNING, COMPLETED) → 400
-- Non-member → 404
-- Invalid UUID → 400
-- `input` empty string → 400
 
 ---
 
-## Task 2 — Tests
+## File: `apps/e2e/.gitignore`
 
-**File:** `apps/api/tests/tasks.test.ts`
+```
+node_modules/
+playwright-report/
+test-results/
+.playwright/
+```
 
-Add a new describe block. The `task.update` mock already exists in the mock setup (`db.task.update`).
+---
+
+## File: `apps/e2e/playwright.config.ts`
 
 ```typescript
-describe('PATCH /api/projects/:projectId/tasks/:taskId', () => {
-  let app: FastifyInstance
+import { defineConfig, devices } from '@playwright/test'
 
-  beforeEach(async () => {
-    vi.clearAllMocks()
-    app = await buildApp()
+export default defineConfig({
+  testDir: './tests',
+  timeout: 30_000,
+  expect: { timeout: 8_000 },
+  fullyParallel: false,
+  retries: 1,
+  use: {
+    baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
+    trace: 'on-first-retry',
+  },
+  projects: [
+    {
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
+    },
+  ],
+})
+```
+
+---
+
+## File: `apps/e2e/tests/auth.spec.ts`
+
+```typescript
+import { test, expect } from '@playwright/test'
+
+function uniqueEmail() {
+  return `e2e_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@test.com`
+}
+
+async function register(page: Parameters<Parameters<typeof test>[1]>[0], email: string) {
+  await page.goto('/register')
+  await page.getByLabel('Name').fill('E2E Tester')
+  await page.getByLabel('Email').fill(email)
+  await page.getByLabel('Password').fill('password123!')
+  await page.getByRole('button', { name: 'Register' }).click()
+  await page.waitForURL('/dashboard')
+}
+
+test.describe('Authentication', () => {
+  test('register → dashboard', async ({ page }) => {
+    await register(page, uniqueEmail())
+    await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
   })
 
-  afterEach(async () => { await app.close() })
+  test('logout → /login, then login → dashboard', async ({ page }) => {
+    const email = uniqueEmail()
+    await register(page, email)
 
-  it('200 — updates input on PENDING task', async () => {
-    const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'PENDING', input: 'old' })
-    db.task.update.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'PENDING', input: 'new input' })
+    await page.getByRole('button', { name: 'Logout' }).click()
+    await page.waitForURL('/login')
 
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { input: 'new input' },
-    })
-    expect(res.statusCode).toBe(200)
-    expect(res.json().data.input).toBe('new input')
+    await page.getByLabel('Email').fill(email)
+    await page.getByLabel('Password').fill('password123!')
+    await page.getByRole('button', { name: 'Sign In' }).click()
+    await page.waitForURL('/dashboard')
+    await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
   })
 
-  it('200 — updates input on REJECTED task', async () => {
-    const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'REJECTED', input: 'old' })
-    db.task.update.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'REJECTED', input: 'revised input' })
-
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { input: 'revised input' },
-    })
-    expect(res.statusCode).toBe(200)
+  test('wrong password → error visible', async ({ page }) => {
+    await page.goto('/login')
+    await page.getByLabel('Email').fill('nobody@e2e.test')
+    await page.getByLabel('Password').fill('wrongpassword')
+    await page.getByRole('button', { name: 'Sign In' }).click()
+    await expect(page.locator('p.text-red-600')).toBeVisible()
   })
 
-  it('400 — cannot edit task in RUNNING status', async () => {
-    const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'RUNNING', input: 'old' })
-
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { input: 'new input' },
-    })
-    expect(res.statusCode).toBe(400)
-  })
-
-  it('404 — non-member cannot edit task', async () => {
-    const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue(null)
-
-    const res = await app.inject({
-      method: 'PATCH',
-      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { input: 'new input' },
-    })
-    expect(res.statusCode).toBe(404)
+  test('unauthenticated /dashboard → redirect to /login', async ({ page }) => {
+    await page.goto('/dashboard')
+    await expect(page).toHaveURL('/login')
   })
 })
 ```
 
-**Expected test count:** 121 + 4 = **125 passing**
+---
+
+## File: `apps/e2e/tests/projects.spec.ts`
+
+```typescript
+import { test, expect } from '@playwright/test'
+
+function uniqueEmail() {
+  return `e2e_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@test.com`
+}
+
+async function loginNew(page: Parameters<Parameters<typeof test>[1]>[0]) {
+  await page.goto('/register')
+  await page.getByLabel('Name').fill('E2E Tester')
+  await page.getByLabel('Email').fill(uniqueEmail())
+  await page.getByLabel('Password').fill('password123!')
+  await page.getByRole('button', { name: 'Register' }).click()
+  await page.waitForURL('/dashboard')
+}
+
+test.describe('Projects', () => {
+  test('new user sees empty state', async ({ page }) => {
+    await loginNew(page)
+    await expect(page.getByText('No projects yet')).toBeVisible()
+  })
+
+  test('create project → visible in dashboard', async ({ page }) => {
+    await loginNew(page)
+
+    await page.getByRole('link', { name: 'New Project' }).click()
+    await page.waitForURL('/projects/new')
+
+    const projectName = `E2E Project ${Date.now()}`
+    await page.getByPlaceholder('My Marketing Campaign').fill(projectName)
+    await page.getByRole('button', { name: 'Create Project' }).click()
+
+    // redirects to project tasks page
+    await page.waitForURL(/\/projects\/[0-9a-f-]+$/)
+
+    // back to dashboard — project should appear
+    await page.goto('/dashboard')
+    await expect(page.getByText(projectName)).toBeVisible()
+  })
+
+  test('project page shows task creation form', async ({ page }) => {
+    await loginNew(page)
+
+    await page.getByRole('link', { name: 'New Project' }).click()
+    await page.getByPlaceholder('My Marketing Campaign').fill('Task Form Test')
+    await page.getByRole('button', { name: 'Create Project' }).click()
+    await page.waitForURL(/\/projects\/[0-9a-f-]+$/)
+
+    await expect(page.getByRole('heading', { name: 'New Task' })).toBeVisible()
+    await expect(page.getByPlaceholder('Describe your task...')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Create Task' })).toBeVisible()
+  })
+})
+```
 
 ---
 
 ## Architecture context
 
 ```
-Current passing tests: 121
-Target: ≥125
+Frontend port: 3000   (Next.js, apps/frontend)
+API port:      3001   (Fastify, apps/api)
+Stack start:   docker-compose up (from repo root)
 
-assertUuid() already exists in tasks.ts — reuse it.
-prisma.task.update is already mocked in the test file.
-z (zod) may or may not be imported in tasks.ts — check before adding.
-TaskStatus enum values: PENDING, REJECTED, RUNNING, AWAITING_CLARIFICATION,
-  AWAITING_APPROVAL, APPROVED, COMPLETED, FAILED
-Only PENDING and REJECTED are editable — all others must return 400.
+Tests are run against a LIVE stack — they do NOT mock the API.
+Task creation requires ANTHROPIC_API_KEY (scoring via Claude).
+auth.spec.ts and projects.spec.ts do NOT need ANTHROPIC_API_KEY.
+
+Playwright locators used (match existing HTML):
+  page.getByLabel('Name')                  → <label>Name</label> + adjacent input
+  page.getByLabel('Email')                 → <label>Email</label> + adjacent input
+  page.getByLabel('Password')              → <label>Password</label> + adjacent input
+  page.getByRole('button', { name: 'Register' })
+  page.getByRole('button', { name: 'Sign In' })
+  page.getByRole('button', { name: 'Logout' })
+  page.getByRole('link', { name: 'New Project' })
+  page.getByRole('heading', { name: 'Projects' })
+  page.getByRole('heading', { name: 'New Task' })
+  page.getByPlaceholder('My Marketing Campaign')
+  page.getByPlaceholder('Describe your task...')
+  page.locator('p.text-red-600')           → error message paragraph
+
+Running tests (requires docker stack):
+  cd apps/e2e
+  BASE_URL=http://localhost:3000 npx playwright test
 ```
 
 ---
 
 ## How to submit
 
-1. `git checkout -b agent/hardening-v5` from main
-2. Make changes
-3. `npx tsc --noEmit -p apps/api/tsconfig.json` — zero errors
-4. `npx vitest run` — all pass
-5. Commit with descriptive message
-6. Write report in `AGENTS_CHAT.md` under `## Wave 8 → Codex`
-7. Tell the human "done, agent/hardening-v5 ready for review"
+1. `git checkout -b agent/e2e-v1` from main
+2. Create all 5 files above exactly as specified
+3. `cd apps/e2e && npm install && npx playwright install chromium`
+4. `npx playwright test --list` — must show 7 tests, 0 errors
+5. `cd ../..` — do NOT run actual tests (needs docker stack)
+6. Commit with descriptive message
+7. Write report in `AGENTS_CHAT.md` under `## Wave 11 → Codex`
+8. Tell the human "done, agent/e2e-v1 ready for review"
