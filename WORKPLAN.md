@@ -8,20 +8,32 @@
 
 **Готовность MVP: 95%** `[█████████░]`
 **Тесты:** 125 / ~135 (цель) — unit, нет E2E
-**Ветка:** `main` | Последний merge: Wave 7
+**Ветка:** `main` | Последний merge: Wave 8
 
 ### Блоки открытых задач
 
 | # | Блок | Приоритет | Статус |
 |---|------|-----------|--------|
-| W8 | **Wave 8** — PATCH task + Toast + Delete UI | 🔴 HIGH | ✅ смержен |
+| W9 | **Wave 9** — Inline task editor + pagination UI | 🔴 HIGH | ⏳ Gemini в работе |
 | E1 | **E2E-тесты** — Playwright: login→create task→approve flow | 🟡 MED | ❌ не начато |
-| E2 | **n8n reconcile** — устранить расхождение `fa9037` vs `igor_g` путей | 🟡 MED | ❌ не начато |
+| E2 | **n8n workflows push** — `docker-compose up` + `n8nac push` ×5 | 🟡 MED | ⚠️ config OK, push pending |
 | E3 | **Production deploy** — cloud env, secrets, smoke test | 🟡 MED | ❌ не начато |
-| E4 | **PATCH task UI** — редактор input для PENDING/REJECTED задач | 🟢 LOW | ❌ не начато (backend будет в W8) |
-| E5 | **Pagination UI** — кнопка "Load more" на task list | 🟢 LOW | ❌ не начато |
 
-> После Wave 8 — 95%+. Блоки E1–E3 нужны для production-ready.
+> E4/E5 закрыты через Wave 9. E2 разблокируется после E3 (docker stack).
+
+### n8n статус (E2)
+
+- `n8nac-config.json` → `local_5678_igor_g` ✅ верно
+- Stale `local_5678_fa9037/` → удалена ✅
+- 5 workflows — `EXIST_ONLY_LOCALLY`, никогда не пушились в n8n
+- **Когда n8n запустится** (после `docker-compose up`):
+  ```bash
+  npx n8nac push apps/workflows/local_5678_igor_g/personal/orchestrator.workflow.ts
+  npx n8nac push apps/workflows/local_5678_igor_g/personal/scenario-a.workflow.ts
+  npx n8nac push apps/workflows/local_5678_igor_g/personal/scenario-b.workflow.ts
+  npx n8nac push apps/workflows/local_5678_igor_g/personal/scenario-c.workflow.ts
+  npx n8nac push apps/workflows/local_5678_igor_g/personal/scenario-d.workflow.ts
+  ```
 
 ---
 

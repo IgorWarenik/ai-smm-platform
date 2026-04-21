@@ -31,19 +31,40 @@ export default function ProjectTasksPage() {
     const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([])
     const [clarificationTaskId, setClarificationTaskId] = useState<string | null>(null)
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+    const [editingInput, setEditingInput] = useState(false)
+    const [editInputValue, setEditInputValue] = useState('')
+    const [page, setPage] = useState(1)
+    const [hasMore, setHasMore] = useState(false)
 
     const selectedTask = tasks.find(t => t.id === selectedTaskId)
     const streamEnabled = selectedTask?.status === 'RUNNING'
     const streamEvents = useTaskStream(projectId, selectedTaskId || '', streamEnabled)
 
-    const fetchTasks = () => {
+    const fetchTasks = (resetPage = true) => {
+        const currentPage = resetPage ? 1 : page
+        if (resetPage) setPage(1)
         const qs = statusFilter !== 'ALL' ? `&status=${statusFilter}` : ''
-        apiFetch<{ data: Task[] }>(`/api/projects/${projectId}/tasks?pageSize=20${qs}`)
-            .then(({ data }) => setTasks(data))
+        apiFetch<{ data: Task[]; total: number }>(`/api/projects/${projectId}/tasks?page=${currentPage}&pageSize=20${qs}`)
+            .then(({ data, total }) => {
+                setTasks(prev => resetPage ? data : [...prev, ...data])
+                setHasMore((resetPage ? data.length : tasks.length + data.length) < total)
+            })
             .finally(() => setLoading(false))
     }
 
+    const loadMore = () => {
+        const nextPage = page + 1
+        setPage(nextPage)
+        const qs = statusFilter !== 'ALL' ? `&status=${statusFilter}` : ''
+        apiFetch<{ data: Task[]; total: number }>(`/api/projects/${projectId}/tasks?page=${nextPage}&pageSize=20${qs}`)
+            .then(({ data, total }) => {
+                setTasks(prev => [...prev, ...data])
+                setHasMore(tasks.length + data.length < total)
+            })
+    }
+
     useEffect(() => { fetchTasks() }, [projectId, statusFilter])
+    useEffect(() => { setEditingInput(false) }, [selectedTaskId])
 
     const handleCreateTask = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -86,6 +107,21 @@ export default function ProjectTasksPage() {
             setToast({ message: 'Task deleted', type: 'success' })
         } catch {
             setToast({ message: 'Failed to delete task', type: 'error' })
+        }
+    }
+
+    const handleSaveInput = async () => {
+        if (!selectedTask) return
+        try {
+            await apiFetch(`/api/projects/${projectId}/tasks/${selectedTask.id}`, {
+                method: 'PATCH',
+                body: JSON.stringify({ input: editInputValue }),
+            })
+            setEditingInput(false)
+            fetchTasks()
+            setToast({ message: 'Task updated', type: 'success' })
+        } catch (err: any) {
+            setToast({ message: err?.message ?? 'Failed to update task', type: 'error' })
         }
     }
 
@@ -171,6 +207,12 @@ export default function ProjectTasksPage() {
                             >×</button>
                         </div>
                     ))}
+                    {hasMore && (
+                        <button onClick={loadMore}
+                            className="w-full text-xs text-gray-500 border rounded py-2 hover:bg-gray-50 mt-2">
+                            Load more
+                        </button>
+                    )}
                 </div>
             </div>
 
@@ -185,9 +227,39 @@ export default function ProjectTasksPage() {
                             </div>
                         </div>
 
-                        <div className="bg-gray-50 p-4 rounded text-sm whitespace-pre-wrap text-gray-800 border">
-                            {selectedTask.input}
-                        </div>
+                        {editingInput ? (
+                            <div className="space-y-2">
+                                <textarea
+                                    value={editInputValue}
+                                    onChange={e => setEditInputValue(e.target.value)}
+                                    className="w-full border rounded p-3 text-sm min-h-[120px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                />
+                                <div className="flex gap-2">
+                                    <button onClick={handleSaveInput}
+                                        className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700">
+                                        Save
+                                    </button>
+                                    <button onClick={() => setEditingInput(false)}
+                                        className="px-4 py-1.5 rounded text-sm border hover:bg-gray-50">
+                                        Cancel
+                                    </button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="relative group/input">
+                                <div className="bg-gray-50 p-4 rounded text-sm whitespace-pre-wrap text-gray-800 border">
+                                    {selectedTask.input}
+                                </div>
+                                {(selectedTask.status === 'PENDING' || selectedTask.status === 'REJECTED') && (
+                                    <button
+                                        onClick={() => { setEditInputValue(selectedTask.input); setEditingInput(true) }}
+                                        className="absolute top-2 right-2 hidden group-hover/input:block text-xs text-gray-400 hover:text-blue-600 bg-white border rounded px-2 py-0.5"
+                                    >
+                                        Edit
+                                    </button>
+                                )}
+                            </div>
+                        )}
 
                         {selectedTask.status === 'AWAITING_CLARIFICATION' && (
                             <ClarificationForm
