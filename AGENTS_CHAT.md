@@ -9,7 +9,19 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
-## Wave 7 → Codex — DONE
+## Wave 7 — GET /members + Frontend Polish (2026-04-21)
+
+### Codex (`agent/hardening-v4`) — ACCEPTED ✅
+
+- `apps/api/src/routes/projects.ts`: Added `GET /:projectId/members` (member-only, select id/email/name, UUID-validated)
+- `apps/api/tests/projects.test.ts`: +2 tests (200 member list, 404 non-member)
+- 119 → 121 tests
+
+### Gemini (`agent/frontend-v4`) — ⏳ ожидание отчёта
+
+---
+
+## Wave 7 → Codex (raw report)
 
 **Branch:** `agent/hardening-v4`
 

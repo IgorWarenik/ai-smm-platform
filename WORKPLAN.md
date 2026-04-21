@@ -149,7 +149,8 @@
 | Wave 4 Knowledge CRUD | ✅ |
 | Wave 5 DELETE task + UUID guards + Frontend UX | ✅ |
 | Wave 6 Rate limit + member removal + settings page | ✅ |
+| Wave 7 GET /members + nav active state + UX polish | ⏳ Codex ✅, Gemini ожидает |
 
-**Следующий шаг:** Wave 7 briefs — определить следующий приоритет. 119/119 тестов.
+**Следующий шаг:** принять Gemini Wave 7 после отчёта. 121/121 тестов.
 
 **n8n риск:** `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, существующие workflow в `apps/workflows/local_5678_igor_g/personal`. Перед правками workflow запускать `npx --yes n8nac list`.
