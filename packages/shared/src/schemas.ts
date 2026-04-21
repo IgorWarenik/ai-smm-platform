@@ -143,10 +143,27 @@ export type TaskScoringResult = z.infer<typeof TaskScoringResultSchema>
 
 // ─── Approvals (§11.4 ТЗ) ────────────────────────────────────────────────────
 
-export const CreateApprovalSchema = z.object({
-  decision: z.nativeEnum(ApprovalDecision),
-  comment: z.string().max(2000).optional(),
-})
+const MIN_REVISION_CHARS = 50 // mirrors MIN_REVISION_FEEDBACK_CHARS in ai-engine
+
+export const CreateApprovalSchema = z
+  .object({
+    decision: z.nativeEnum(ApprovalDecision),
+    comment: z.string().max(2000).optional(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.decision !== ApprovalDecision.REVISION_REQUESTED) return
+
+    if (!data.comment || data.comment.trim().length < MIN_REVISION_CHARS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_small,
+        minimum: MIN_REVISION_CHARS,
+        type: 'string',
+        inclusive: true,
+        message: `Revision feedback must be at least ${MIN_REVISION_CHARS} characters`,
+        path: ['comment'],
+      })
+    }
+  })
 
 export type CreateApprovalInput = z.infer<typeof CreateApprovalSchema>
 
@@ -198,6 +215,12 @@ export const PaginationSchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
 })
+
+export const TaskQuerySchema = PaginationSchema.extend({
+  status: z.nativeEnum(TaskStatus).optional(),
+})
+
+export type TaskQueryInput = z.infer<typeof TaskQuerySchema>
 
 // ─── n8n Webhook payloads (sent by Fastify to n8n) ────────────────────────────
 
