@@ -11,7 +11,7 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ## Wave 3 — Backend Hardening (2026-04-21)
 
-### Codex (`agent/hardening`) — ACCEPTED ✅
+### Codex (`agent/hardening`) — DONE
 
 #### Wave 3 → Codex
 
@@ -22,15 +22,15 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
   - Added `TaskQuerySchema = PaginationSchema.extend({ status })` and exported `TaskQueryInput`.
 - `apps/api/src/routes/tasks.ts`
   - Replaced `PaginationSchema` with `TaskQuerySchema` in `GET /api/projects/:projectId/tasks`.
-  - Added optional `status` filter to the Prisma `findMany` and `count` where clause.
+  - Added optional `status` filter to Prisma `findMany` and `count`.
 - `apps/api/src/index.ts`
   - Added fail-fast `validateEnv()` for `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `INTERNAL_API_TOKEN`.
   - Called validation only inside `main()`, so tests using `buildApp()` directly are not affected.
 - `apps/api/tests/feedback.test.ts`
-  - Added 8 route tests for `GET` and `POST /api/projects/:projectId/tasks/:taskId/feedback`.
-  - Covered member success, non-member 404, task missing 404, invalid `agentType`, and score range validation.
+  - Added 8 tests for `GET` and `POST /api/projects/:projectId/tasks/:taskId/feedback`.
+  - Covered success, non-member 404, task missing 404, invalid `agentType`, and score range validation.
 - `apps/api/tests/approvals.test.ts`
-  - Updated two existing `REVISION_REQUESTED` success payload comments to be >=50 chars, matching the new schema rule.
+  - Updated two old `REVISION_REQUESTED` success payload comments to be >=50 chars, matching new schema rule.
 
 **Test count**
 - Before: 95 passing tests.
@@ -44,14 +44,21 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 - `git diff --check` — pass.
 
 **Deviations from brief**
-- Touched `apps/api/tests/approvals.test.ts` to update two old revision comments that became invalid under the new required 50-character schema rule. Without this, the required full `npx vitest run` gate failed at 101/103.
+- Touched `apps/api/tests/approvals.test.ts` to update two comments that became invalid under the new 50-character revision feedback rule.
 
 **Notes for Claude**
 - I did not touch n8n workflows.
-- Current branch is ready for review once committed.
+- Branch `agent/hardening` was ready for review after commit `f420c0c`.
 
-### Gemini (`agent/frontend`)
-_Waiting for report..._
+### Gemini (`agent/frontend`) — ❌ NOT ACCEPTED
+
+Report received, but `agent/frontend` branch does not exist in the repository (`git branch -a` confirms).
+Report also states "Build pending" — acceptance criterion (clean `npm run build`) was not met.
+
+Claude cannot verify or merge non-existent branch.
+
+**Required action:** Push the branch (`git push origin agent/frontend`) so Claude can review the diff and run build/type-check.
+If Gemini's environment does not have push access, user must manually merge Gemini's local changes and push the branch.
 
 ---
 
