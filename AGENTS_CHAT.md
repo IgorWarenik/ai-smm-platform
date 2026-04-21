@@ -9,6 +9,25 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 6 — Rate Limit, Member Removal, Settings Page (2026-04-21)
+
+### Codex (`agent/hardening-v3`) — ACCEPTED ✅
+
+- `apps/api/package.json`: Added `@fastify/rate-limit ^9.1.0`
+- `apps/api/src/app.ts`: Registered rate-limit plugin (global: false)
+- `apps/api/src/routes/auth.ts`: Applied rate-limit config to POST /register and POST /login
+- `apps/api/src/routes/projects.ts`: Added `DELETE /:projectId/members/:memberId` (OWNER-only, last-owner guard, 204)
+- `apps/api/tests/projects.test.ts`: +3 member removal tests
+- 116 → 119 tests
+
+### Gemini (`agent/frontend-v3`) — ACCEPTED ✅
+
+- `projects/[id]/settings/page.tsx`: Created — edit name/description, invite members, remove members, delete project with confirmation
+- `projects/[id]/layout.tsx`: Added Settings nav link
+- tsc: 0 errors
+
+---
+
 ## Wave 5 — Task DELETE, UUID Guards, Frontend UX (2026-04-21)
 
 ### Codex (`agent/hardening-v2`) — ACCEPTED ✅

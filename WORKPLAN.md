@@ -148,7 +148,8 @@
 | 5b Backend Hardening | ✅ |
 | Wave 4 Knowledge CRUD | ✅ |
 | Wave 5 DELETE task + UUID guards + Frontend UX | ✅ |
+| Wave 6 Rate limit + member removal + settings page | ✅ |
 
-**Следующий шаг:** Wave 6 briefs — определить следующий приоритет.
+**Следующий шаг:** Wave 7 briefs — определить следующий приоритет. 119/119 тестов.
 
 **n8n риск:** `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, существующие workflow в `apps/workflows/local_5678_igor_g/personal`. Перед правками workflow запускать `npx --yes n8nac list`.
