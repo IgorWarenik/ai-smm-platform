@@ -9,93 +9,41 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
-## Wave 4 → Codex — DONE
+## Wave 4 — Knowledge CRUD + Frontend Pages (2026-04-21)
 
-**Branch:** `agent/backend-v2`
+### Codex (`agent/backend-v2`) — ACCEPTED ✅
 
-**What was done**
-- `apps/api/src/routes/knowledge.ts`
-  - Added `DELETE /api/projects/:projectId/knowledge/:itemId`.
-  - Delete checks membership, project-scopes through `withProjectContext`, verifies item project ownership, returns 204 on success.
-  - Added `PATCH /api/projects/:projectId/knowledge/:itemId`.
-  - Patch supports optional `content`, `metadata`, `category`; rejects empty body with 400.
-  - Patch checks membership, project-scopes through `withProjectContext`, verifies item project ownership, returns updated item.
-  - Patch re-embeds asynchronously when `content` changes.
-- `apps/api/tests/knowledge.test.ts`
-  - Added `knowledgeItem.update` and `knowledgeItem.delete` mocks.
-  - Added 3 DELETE tests.
-  - Added 4 PATCH tests.
+- `apps/api/src/routes/knowledge.ts`: Added `DELETE /:itemId` (member-only, 204) and `PATCH /:itemId` (optional re-embed via async `$executeRawUnsafe`)
+- `apps/api/tests/knowledge.test.ts`: Added 7 new tests (DELETE ×3, PATCH ×4) — 16/16 pass
+- 110/110 total tests pass after merge to main.
 
-**Test count**
-- Before: 103 passing tests.
-- After: 110 passing tests.
+### Gemini (`agent/frontend`) — ACCEPTED ✅
 
-**Validation**
-- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass.
-- `npx vitest run apps/api/tests/knowledge.test.ts` — pass, 16/16.
-- `npx vitest run` — pass, 110/110.
-- `git diff --check` — pass.
-
-**Deviations**
-- Brief said `z` was already imported in `knowledge.ts`; it was not, so I added `import { z } from 'zod'`.
-- Brief snippet used Prisma `knowledgeItem.update({ data: { embedding } })`, but current project stores pgvector via raw SQL. I used the existing `$executeRawUnsafe` vector update pattern so TypeScript stays clean.
-- User explicitly forbade editing `WORKPLAN.md`; no `WORKPLAN.md` update was made.
-
-**Notes for Claude**
-- I did not touch frontend files or n8n workflows.
-- Existing dirty files not owned by Codex were left untouched.
+All pages implemented and merged to main:
+- `apps/frontend/src/lib/api.ts` — `apiFetch` with auto-refresh on 401, token storage
+- `apps/frontend/src/contexts/auth.tsx` — `AuthProvider` with login/register/logout
+- `apps/frontend/src/middleware.ts` — redirect unauthenticated → `/login`
+- `apps/frontend/src/components/ApprovalPanel.tsx` — approve/revision UI
+- `apps/frontend/src/hooks/useTaskStream.ts` — EventSource with `?token=` query param
+- `/login`, `/register`, `/dashboard`, `/projects/new`, `/projects/[id]` (tasks+layout+profile+knowledge)
 
 ---
 
-## Wave 3 — Backend Hardening (2026-04-21)
+## Wave 3 — Backend Hardening + Frontend Scaffold (2026-04-21)
 
-### Codex (`agent/hardening`) — DONE
+### Codex (`agent/hardening`) — ACCEPTED ✅
 
-#### Wave 3 → Codex
+- `packages/shared/src/schemas.ts`: Added `MIN_REVISION_CHARS = 50`, updated `CreateApprovalSchema` with `superRefine()`, added `TaskQuerySchema` + `TaskQueryInput`
+- `apps/api/src/routes/tasks.ts`: Replaced `PaginationSchema` with `TaskQuerySchema`, added optional `status` filter
+- `apps/api/src/index.ts`: Added fail-fast `validateEnv()` inside `main()` only
+- `apps/api/tests/feedback.test.ts`: 8 new tests for feedback endpoints
+- `apps/api/tests/approvals.test.ts`: Updated two REVISION_REQUESTED comments to ≥50 chars
+- 95 → 103 tests
 
-**What was done**
-- `packages/shared/src/schemas.ts`
-  - Added local `MIN_REVISION_CHARS = 50`, mirroring `MIN_REVISION_FEEDBACK_CHARS`.
-  - Updated `CreateApprovalSchema` with `superRefine()` so `REVISION_REQUESTED` requires a trimmed `comment` of at least 50 chars.
-  - Added `TaskQuerySchema = PaginationSchema.extend({ status })` and exported `TaskQueryInput`.
-- `apps/api/src/routes/tasks.ts`
-  - Replaced `PaginationSchema` with `TaskQuerySchema` in `GET /api/projects/:projectId/tasks`.
-  - Added optional `status` filter to Prisma `findMany` and `count`.
-- `apps/api/src/index.ts`
-  - Added fail-fast `validateEnv()` for `DATABASE_URL`, `JWT_SECRET`, `JWT_REFRESH_SECRET`, and `INTERNAL_API_TOKEN`.
-  - Called validation only inside `main()`, so tests using `buildApp()` directly are not affected.
-- `apps/api/tests/feedback.test.ts`
-  - Added 8 tests for `GET` and `POST /api/projects/:projectId/tasks/:taskId/feedback`.
-  - Covered success, non-member 404, task missing 404, invalid `agentType`, and score range validation.
-- `apps/api/tests/approvals.test.ts`
-  - Updated two old `REVISION_REQUESTED` success payload comments to be >=50 chars, matching new schema rule.
+### Gemini (`agent/frontend`) — ACCEPTED ✅
 
-**Test count**
-- Before: 95 passing tests.
-- After: 103 passing tests.
-
-**Validation**
-- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass.
-- `npx tsc --noEmit -p packages/shared/tsconfig.json` — pass.
-- `npx vitest run apps/api/tests/feedback.test.ts` — pass, 8/8.
-- `npx vitest run` — pass, 103/103.
-- `git diff --check` — pass.
-
-**Deviations from brief**
-- Touched `apps/api/tests/approvals.test.ts` to update two comments that became invalid under the new 50-character revision feedback rule.
-
-**Notes for Claude**
-- I did not touch n8n workflows.
-- Branch `agent/hardening` was ready for review after commit `f420c0c`.
-
-### Gemini (`agent/frontend`) — ⏳ SCAFFOLD CREATED, PAGES NEEDED
-
-Claude recovered Gemini's 3 files (api.ts, auth.tsx, middleware.ts) from repo root and placed them correctly.
-Claude created full Next.js 14 scaffold: package.json, tsconfig.json, next.config.ts, tailwind config, layout, globals.css.
-`npx tsc --noEmit` passes on scaffold + 3 files.
-
-**Remaining work:** All page files (Tasks 1–10 in AGENT_BRIEF_GEMINI.md).
-Branch `agent/frontend` exists. Gemini should commit page files directly to this branch.
+Frontend scaffold created: Next.js 14, Tailwind, TypeScript, auth context, middleware.
+Pages: Tasks 1–10 from brief — all delivered and merged via agent/frontend branch.
 
 ---
 
@@ -114,3 +62,9 @@ Branch `agent/frontend` exists. Gemini should commit page files directly to this
 - token-budgets.ts: `MIN_REVISION_FEEDBACK_CHARS = 50` added + exported — done
 - cavekit-tokens.md: GAP item updated — done
 - Merged to main. 95/95 tests pass.
+
+---
+
+## Wave 5 Briefs
+
+_See AGENT_BRIEF_CODEX.md and AGENT_BRIEF_GEMINI.md_
