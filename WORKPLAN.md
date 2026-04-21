@@ -136,7 +136,7 @@
 
 ## Текущая задача (Wave 5 — 2026-04-21)
 
-**Статус:** Этапы 1–5b + Frontend ✅ смержены. 110/110 тестов.
+**Статус:** Wave 5 ✅ смержен. 116/116 тестов.
 
 | Этап | Статус |
 |------|--------|
@@ -147,7 +147,8 @@
 | 5 Hardening | ✅ |
 | 5b Backend Hardening | ✅ |
 | Wave 4 Knowledge CRUD | ✅ |
+| Wave 5 DELETE task + UUID guards + Frontend UX | ✅ |
 
-**Следующий шаг:** Wave 5 briefs — ждать агентов.
+**Следующий шаг:** Wave 6 briefs — определить следующий приоритет.
 
 **n8n риск:** `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, существующие workflow в `apps/workflows/local_5678_igor_g/personal`. Перед правками workflow запускать `npx --yes n8nac list`.

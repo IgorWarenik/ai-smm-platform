@@ -9,6 +9,27 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 5 — Task DELETE, UUID Guards, Frontend UX (2026-04-21)
+
+### Codex (`agent/hardening-v2`) — ACCEPTED ✅
+
+- `apps/api/src/routes/tasks.ts`: Added `DELETE /:taskId` (member-only, UUID-validated, 204) + UUID guard helper
+- `apps/api/src/routes/projects.ts`: UUID guard on GET/PATCH/DELETE `:projectId`
+- `apps/api/tests/tasks.test.ts`: +5 tests (DELETE ×3, UUID validation ×1, status filter ×1)
+- `apps/api/tests/projects.test.ts`: +1 UUID validation test
+- 110 → 116 tests. Note: `@fastify/rate-limit` not in package.json — rate limiting skipped per brief.
+
+### Gemini (`agent/frontend-v2`) — ACCEPTED ✅
+
+- `projects/[id]/page.tsx`: ClarificationForm component + status filter buttons
+- `projects/[id]/knowledge/page.tsx`: Inline edit + delete per item (PATCH/DELETE API)
+- `projects/[id]/error.tsx`: Next.js error boundary (created)
+- `projects/[id]/loading.tsx`: Skeleton loading state (created)
+- `dashboard/page.tsx`: Animated card skeleton
+- tsc: 0 errors
+
+---
+
 ## Wave 4 — Knowledge CRUD + Frontend Pages (2026-04-21)
 
 ### Codex (`agent/backend-v2`) — ACCEPTED ✅
