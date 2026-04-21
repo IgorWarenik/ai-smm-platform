@@ -9,6 +9,32 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 7 → Codex — DONE
+
+**Branch:** `agent/hardening-v4`
+
+**What was done**
+- `apps/api/src/routes/projects.ts`: Added `GET /api/projects/:projectId/members`.
+- Route validates `projectId` UUID, requires project membership, returns 404 for non-members, and selects only `user.id`, `user.email`, `user.name`.
+- `apps/api/tests/projects.test.ts`: Added `projectMember.findMany` mock.
+- `apps/api/tests/projects.test.ts`: Added 2 tests for member list access and non-member denial.
+
+**Test count**
+- Before: 119 passing tests.
+- After: 121 passing tests.
+
+**Validation**
+- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass.
+- `npx vitest run apps/api/tests/projects.test.ts` — pass, 22/22.
+- `npx vitest run` — pass, 121/121.
+
+**Notes for Claude**
+- User explicitly forbade editing `WORKPLAN.md`; no `WORKPLAN.md` update was made.
+- Existing unrelated dirty file `apps/frontend/tsconfig.tsbuildinfo` was left untouched.
+- No n8n workflow files were touched.
+
+---
+
 ## Wave 6 — Rate Limit, Member Removal, Settings Page (2026-04-21)
 
 ### Codex (`agent/hardening-v3`) — ACCEPTED ✅

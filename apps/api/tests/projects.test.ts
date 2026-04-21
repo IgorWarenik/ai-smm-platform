@@ -18,6 +18,7 @@ vi.mock('@ai-marketing/db', () => ({
     },
     projectMember: {
       findUnique: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
       create: vi.fn(),
       upsert: vi.fn(),
       delete: vi.fn(),
@@ -439,6 +440,55 @@ describe('POST /api/projects/:projectId/members', () => {
       url: `/api/projects/${PROJECT_ID}/members`,
       headers: { authorization: `Bearer ${token}` },
       payload: { email: 'nobody@example.com', role: 'MEMBER' },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── GET /api/projects/:projectId/members ─────────────────────────────────────
+
+describe('GET /api/projects/:projectId/members', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('200 — member gets member list', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.projectMember.findMany.mockResolvedValue([
+      {
+        userId: USER_ID,
+        role: 'OWNER',
+        user: { id: USER_ID, email: 'user@example.com', name: 'Owner' },
+      },
+    ])
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/members`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data).toHaveLength(1)
+  })
+
+  it('404 — non-member cannot list members', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/members`,
+      headers: { authorization: `Bearer ${token}` },
     })
 
     expect(res.statusCode).toBe(404)

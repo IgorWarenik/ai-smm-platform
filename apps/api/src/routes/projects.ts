@@ -176,6 +176,30 @@ export async function projectRoutes(app: FastifyInstance) {
     return reply.code(201).send({ data: member })
   })
 
+  // GET /api/projects/:projectId/members
+  app.get('/:projectId/members', async (request, reply) => {
+    const { projectId } = request.params as { projectId: string }
+    if (!assertUuid(reply, projectId, 'projectId')) return
+    const userId = request.user.sub
+
+    const membership = await prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+    })
+    if (!membership) return reply.notFound('Project not found')
+
+    const members = await prisma.projectMember.findMany({
+      where: { projectId },
+      include: {
+        user: {
+          select: { id: true, email: true, name: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    })
+
+    return reply.send({ data: members })
+  })
+
   // DELETE /api/projects/:projectId/members/:memberId — remove member (OWNER only)
   app.delete('/:projectId/members/:memberId', async (request, reply) => {
     const { projectId, memberId } = request.params as { projectId: string; memberId: string }
