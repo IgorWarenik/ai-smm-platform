@@ -46,7 +46,7 @@ const db = prisma as any
 const mockBcrypt = bcrypt as any
 const mockWPC = withProjectContext as any
 
-const PROJECT_ID = 'proj-00000000-0000-0000-0000-000000000001'
+const PROJECT_ID = 'a0000000-0000-0000-0000-000000000001'
 const USER_ID = 'user-0000-0000-0000-0000-000000000001'
 const TARGET_USER_ID = 'user-0000-0000-0000-0000-000000000002'
 
@@ -214,6 +214,19 @@ describe('GET /api/projects/:projectId', () => {
     })
 
     expect(res.statusCode).toBe(404)
+  })
+
+  it('400 — invalid projectId returns bad request', async () => {
+    const token = await getToken(app)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/projects/not-a-uuid',
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(400)
+    expect(res.json().message).toBe('projectId must be a valid UUID')
   })
 })
 

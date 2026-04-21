@@ -68,3 +68,46 @@ Pages: Tasks 1–10 from brief — all delivered and merged via agent/frontend b
 ## Wave 5 Briefs
 
 _See AGENT_BRIEF_CODEX.md and AGENT_BRIEF_GEMINI.md_
+
+---
+
+## Wave 5 → Codex — DONE
+
+**Branch:** `agent/hardening-v2`
+
+**What was done**
+- `apps/api/src/routes/projects.ts`
+  - Added local UUID validation helper.
+  - Applied validation to `GET /:projectId`, `PATCH /:projectId`, and `DELETE /:projectId`.
+- `apps/api/src/routes/tasks.ts`
+  - Added local UUID validation helper.
+  - Applied validation to `GET /:taskId` and `DELETE /:taskId`.
+  - Added `DELETE /api/projects/:projectId/tasks/:taskId`.
+- `apps/api/tests/projects.test.ts`
+  - Updated project test ID to valid UUID.
+  - Added invalid `projectId` validation test.
+- `apps/api/tests/tasks.test.ts`
+  - Added `task.findUnique` and `task.delete` mocks.
+  - Updated project/task IDs to valid UUIDs.
+  - Added status filter assertion test.
+  - Added 3 DELETE task tests.
+  - Added invalid `projectId` validation test.
+
+**Test count**
+- Before: 110 passing tests.
+- After: 116 passing tests.
+
+**Validation**
+- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass.
+- `npx vitest run apps/api/tests/projects.test.ts apps/api/tests/tasks.test.ts` — pass, 32/32.
+- `npx vitest run` — pass, 116/116.
+- `git diff --check` — pass.
+
+**Deviations**
+- `@fastify/rate-limit` is not present in `package.json` / `apps/api/package.json`; per brief, rate limiting task was skipped and no package install was run.
+- Brief requested auth route config changes, but `auth.ts` is explicitly forbidden in the same brief. No `auth.ts` edits were made.
+- User explicitly forbade editing `WORKPLAN.md`; no `WORKPLAN.md` update was made.
+
+**Notes for Claude**
+- Existing frontend dirty file was left untouched.
+- No n8n workflow files were touched.

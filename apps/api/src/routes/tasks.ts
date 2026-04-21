@@ -13,9 +13,19 @@ import {
   TaskStatus,
   ToneOfVoice,
 } from '@ai-marketing/shared'
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import { sseManager } from '../lib/sse'
 import { scoreTask } from '../services/scoring'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function assertUuid(reply: FastifyReply, value: string, label: string): boolean {
+  if (!UUID_RE.test(value)) {
+    reply.badRequest(`${label} must be a valid UUID`)
+    return false
+  }
+  return true
+}
 
 export async function taskRoutes(app: FastifyInstance) {
   app.addHook('preHandler', app.authenticate)
@@ -188,6 +198,8 @@ export async function taskRoutes(app: FastifyInstance) {
   // GET /api/projects/:projectId/tasks/:taskId
   app.get('/:taskId', async (request, reply) => {
     const { projectId, taskId } = request.params as { projectId: string; taskId: string }
+    if (!assertUuid(reply, projectId, 'projectId')) return
+    if (!assertUuid(reply, taskId, 'taskId')) return
     const userId = request.user.sub
 
     const membership = await prisma.projectMember.findUnique({
@@ -203,6 +215,25 @@ export async function taskRoutes(app: FastifyInstance) {
       if (!task) return reply.notFound('Task not found')
       return reply.send({ data: task })
     })
+  })
+
+  // DELETE /api/projects/:projectId/tasks/:taskId
+  app.delete('/:taskId', async (request, reply) => {
+    const { projectId, taskId } = request.params as { projectId: string; taskId: string }
+    if (!assertUuid(reply, projectId, 'projectId')) return
+    if (!assertUuid(reply, taskId, 'taskId')) return
+    const userId = request.user.sub
+
+    const membership = await prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+    })
+    if (!membership) return reply.notFound('Project not found')
+
+    const task = await prisma.task.findUnique({ where: { id: taskId } })
+    if (!task || task.projectId !== projectId) return reply.notFound('Task not found')
+
+    await prisma.task.delete({ where: { id: taskId } })
+    return reply.code(204).send()
   })
 
   // POST /api/projects/:projectId/tasks/:taskId/execute
