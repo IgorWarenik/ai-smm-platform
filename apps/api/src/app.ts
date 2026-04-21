@@ -1,6 +1,7 @@
 import Fastify from 'fastify'
 import cors from '@fastify/cors'
 import sensible from '@fastify/sensible'
+import rateLimit from '@fastify/rate-limit'
 import { ZodError } from 'zod'
 import { jwtPlugin } from './plugins/jwt'
 import { authRoutes } from './routes/auth'
@@ -24,6 +25,11 @@ export async function buildApp() {
     credentials: true,
   })
   await app.register(sensible)
+  await app.register(rateLimit, {
+    global: false,
+    max: 20,
+    timeWindow: '1 minute',
+  })
   await app.register(jwtPlugin)
 
   // ─── Global error handler ──────────────────────────────────

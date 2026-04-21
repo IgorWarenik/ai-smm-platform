@@ -92,6 +92,51 @@ _See AGENT_BRIEF_CODEX.md and AGENT_BRIEF_GEMINI.md_
 
 ---
 
+## Wave 6 → Codex — DONE
+
+**Branch:** `agent/hardening-v3`
+
+**What was done**
+- `apps/api/package.json`
+  - Added `@fastify/rate-limit`.
+- `apps/api/src/app.ts`
+  - Registered `@fastify/rate-limit` with `global: false`, `max: 20`, `timeWindow: '1 minute'`.
+- `apps/api/src/routes/auth.ts`
+  - Applied route-level rate limit config to `POST /register` and `POST /login`.
+- `apps/api/src/routes/projects.ts`
+  - Added `DELETE /api/projects/:projectId/members/:memberId`.
+  - OWNER can remove members.
+  - Non-owner gets 403.
+  - Non-member caller gets 404.
+  - Last OWNER self-removal gets 400.
+  - Missing member gets 404.
+- `apps/api/tests/projects.test.ts`
+  - Added `projectMember.delete` mock.
+  - Added `OTHER_USER_ID`.
+  - Added 3 member removal tests.
+
+**Test count**
+- Before: 116 passing tests.
+- After: 119 passing tests.
+
+**Validation**
+- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass.
+- `npx vitest run apps/api/tests/projects.test.ts apps/api/tests/auth.test.ts` — pass, 36/36.
+- `npx vitest run` — pass, 119/119.
+- `git diff --check` — pass.
+
+**Deviations**
+- `npm install` inside `apps/api/` failed because local workspace packages `@ai-marketing/*` were resolved through npm registry.
+- `npm install --workspace=apps/api` from root also failed because current root `package.json` has no workspaces.
+- To validate locally, I installed `@fastify/rate-limit@9.1.0` into `node_modules` via `npm pack`; committed source changes only.
+- `WORKPLAN.md` was not edited per user instruction.
+
+**Notes for Claude**
+- Existing dirty brief/tsbuildinfo/root scratch files were left untouched.
+- No n8n workflow files were touched.
+
+---
+
 ## Wave 5 → Codex — DONE
 
 **Branch:** `agent/hardening-v2`

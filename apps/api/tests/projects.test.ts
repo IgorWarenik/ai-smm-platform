@@ -16,7 +16,13 @@ vi.mock('@ai-marketing/db', () => ({
       update: vi.fn().mockResolvedValue({}),
       updateMany: vi.fn().mockResolvedValue({}),
     },
-    projectMember: { findUnique: vi.fn(), create: vi.fn(), upsert: vi.fn(), count: vi.fn() },
+    projectMember: {
+      findUnique: vi.fn(),
+      create: vi.fn(),
+      upsert: vi.fn(),
+      delete: vi.fn(),
+      count: vi.fn().mockResolvedValue(1),
+    },
     project: {
       create: vi.fn(),
       findMany: vi.fn().mockResolvedValue([]),
@@ -49,6 +55,7 @@ const mockWPC = withProjectContext as any
 const PROJECT_ID = 'a0000000-0000-0000-0000-000000000001'
 const USER_ID = 'user-0000-0000-0000-0000-000000000001'
 const TARGET_USER_ID = 'user-0000-0000-0000-0000-000000000002'
+const OTHER_USER_ID = 'b0000000-0000-0000-0000-000000000002'
 
 async function getToken(app: FastifyInstance): Promise<string> {
   db.user.findUnique.mockResolvedValueOnce({
@@ -432,6 +439,67 @@ describe('POST /api/projects/:projectId/members', () => {
       url: `/api/projects/${PROJECT_ID}/members`,
       headers: { authorization: `Bearer ${token}` },
       payload: { email: 'nobody@example.com', role: 'MEMBER' },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── DELETE /api/projects/:projectId/members/:userId ─────────────────────────
+
+describe('DELETE /api/projects/:projectId/members/:userId', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('204 — owner removes member', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockImplementation(({ where }: any) => {
+      if (where?.userId_projectId?.userId === USER_ID) return Promise.resolve({ role: 'OWNER' })
+      return Promise.resolve({ role: 'MEMBER' })
+    })
+    db.projectMember.delete.mockResolvedValue({})
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/members/${OTHER_USER_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(204)
+  })
+
+  it('403 — non-owner cannot remove member', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/members/${OTHER_USER_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('404 — member not found', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockImplementation(({ where }: any) => {
+      if (where?.userId_projectId?.userId === USER_ID) return Promise.resolve({ role: 'OWNER' })
+      return Promise.resolve(null)
+    })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/members/${OTHER_USER_ID}`,
+      headers: { authorization: `Bearer ${token}` },
     })
 
     expect(res.statusCode).toBe(404)
