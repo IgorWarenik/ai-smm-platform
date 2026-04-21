@@ -172,6 +172,7 @@ export async function taskRoutes(app: FastifyInstance) {
   // GET /api/projects/:projectId/tasks
   app.get('/', async (request, reply) => {
     const { projectId } = request.params as { projectId: string }
+    if (!assertUuid(reply, projectId, 'projectId')) return
     const userId = request.user.sub
     const query = TaskQuerySchema.parse(request.query)
 

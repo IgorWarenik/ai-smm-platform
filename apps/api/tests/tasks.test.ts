@@ -529,4 +529,14 @@ describe('UUID validation', () => {
 
     expect(res.statusCode).toBe(400)
   })
+
+  it('400 — GET task list rejects invalid projectId', async () => {
+    const token = await getToken(app)
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/projects/not-a-uuid/tasks',
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(400)
+  })
 })

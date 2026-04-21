@@ -51,6 +51,9 @@ export async function projectRoutes(app: FastifyInstance) {
         where: {
           members: { some: { userId } },
         },
+        include: {
+          _count: { select: { tasks: true } },
+        },
         skip: (query.page - 1) * query.pageSize,
         take: query.pageSize,
         orderBy: { createdAt: 'desc' },
@@ -80,7 +83,10 @@ export async function projectRoutes(app: FastifyInstance) {
     if (!membership) return reply.notFound('Project not found')
 
     return withProjectContext(projectId, userId, async (tx) => {
-      const project = await tx.project.findUnique({ where: { id: projectId } })
+      const project = await tx.project.findUnique({
+        where: { id: projectId },
+        include: { _count: { select: { tasks: true } } },
+      })
       if (!project) return reply.notFound('Project not found')
       return reply.send({ data: project })
     })

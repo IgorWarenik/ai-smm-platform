@@ -175,6 +175,26 @@ describe('GET /api/projects', () => {
     expect(body.total).toBe(1)
     expect(body.page).toBe(1)
   })
+
+  it('200 — project list includes _count.tasks', async () => {
+    const token = await getToken(app)
+    db.projectMember.findMany.mockResolvedValue([])
+    db.project.findMany.mockResolvedValue([
+      { id: PROJECT_ID, name: 'Test', _count: { tasks: 3 } },
+    ])
+    db.project.count.mockResolvedValue(1)
+    db.$transaction.mockImplementation((queries: any[]) =>
+      Promise.all(queries.map((q: any) => (typeof q === 'function' ? q() : q)))
+    )
+
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/projects',
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data[0]._count.tasks).toBe(3)
+  })
 })
 
 // ─── GET /api/projects/:projectId ────────────────────────────────────────────
