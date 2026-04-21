@@ -428,6 +428,83 @@ describe('DELETE /api/projects/:projectId/tasks/:taskId', () => {
   })
 })
 
+// ─── PATCH /api/projects/:projectId/tasks/:taskId ───────────────────────────
+
+describe('PATCH /api/projects/:projectId/tasks/:taskId', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('200 — updates input on PENDING task', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'PENDING', input: 'old' })
+    db.task.update.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'PENDING', input: 'new input' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { input: 'new input' },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.input).toBe('new input')
+  })
+
+  it('200 — updates input on REJECTED task', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'REJECTED', input: 'old' })
+    db.task.update.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'REJECTED', input: 'revised input' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { input: 'revised input' },
+    })
+
+    expect(res.statusCode).toBe(200)
+  })
+
+  it('400 — cannot edit task in RUNNING status', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID, status: 'RUNNING', input: 'old' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { input: 'new input' },
+    })
+
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('404 — non-member cannot edit task', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { input: 'new input' },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
 // ─── UUID validation ─────────────────────────────────────────────────────────
 
 describe('UUID validation', () => {

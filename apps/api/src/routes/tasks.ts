@@ -14,6 +14,7 @@ import {
   ToneOfVoice,
 } from '@ai-marketing/shared'
 import type { FastifyInstance, FastifyReply } from 'fastify'
+import { z } from 'zod'
 import { sseManager } from '../lib/sse'
 import { scoreTask } from '../services/scoring'
 
@@ -234,6 +235,36 @@ export async function taskRoutes(app: FastifyInstance) {
 
     await prisma.task.delete({ where: { id: taskId } })
     return reply.code(204).send()
+  })
+
+  // PATCH /api/projects/:projectId/tasks/:taskId
+  app.patch('/:taskId', async (request, reply) => {
+    const { projectId, taskId } = request.params as { projectId: string; taskId: string }
+    if (!assertUuid(reply, projectId, 'projectId')) return
+    if (!assertUuid(reply, taskId, 'taskId')) return
+    const userId = request.user.sub
+
+    const body = z.object({ input: z.string().min(1).max(5000) }).parse(request.body)
+
+    const membership = await prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+    })
+    if (!membership) return reply.notFound('Project not found')
+
+    const task = await prisma.task.findUnique({ where: { id: taskId } })
+    if (!task || task.projectId !== projectId) return reply.notFound('Task not found')
+
+    const editableStatuses: string[] = ['PENDING', 'REJECTED']
+    if (!editableStatuses.includes(task.status)) {
+      return reply.badRequest(`Task cannot be edited in status ${task.status}`)
+    }
+
+    const updated = await prisma.task.update({
+      where: { id: taskId },
+      data: { input: body.input },
+    })
+
+    return reply.send({ data: updated })
   })
 
   // POST /api/projects/:projectId/tasks/:taskId/execute
