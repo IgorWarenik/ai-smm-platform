@@ -1,242 +1,221 @@
 # Agent Brief — Codex
-## Wave 11 | Branch: `agent/e2e-v1`
+## Wave 12 | Branch: `agent/dockerfiles-v1`
 
-**Stack:** Playwright + TypeScript. Тестирует Next.js frontend (port 3000) против реального Fastify API (port 3001).
+**Goal:** Create production Dockerfiles for API and Frontend so `docker-compose up` works.
+Current root `Dockerfile` is Python/FastAPI — wrong stack, replace it.
 
 **Rules:**
-- New branch from main: `git checkout -b agent/e2e-v1`
-- Work ONLY in assigned files (все новые — в `apps/e2e/`)
-- Do NOT touch any existing files
+- New branch from main: `git checkout -b agent/dockerfiles-v1`
+- Touch ONLY the files listed below
+- Do NOT touch any existing source files, configs, or tests
 - Do NOT merge — Claude reviews
-- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 11 → Codex`
-- Validation: `cd apps/e2e && npm install && npx playwright install chromium && npx playwright test --list`
-  (--list не запускает тесты, только проверяет синтаксис и обнаружение)
+- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 12 → Codex`
+- Validation: `docker build -f apps/api/Dockerfile . --target=runner --no-cache 2>&1 | tail -5` — must NOT error
 
 ---
 
-## Your Files (all new)
+## Stack context
 
 ```
-apps/e2e/package.json
-apps/e2e/playwright.config.ts
-apps/e2e/tests/auth.spec.ts
-apps/e2e/tests/projects.spec.ts
-apps/e2e/.gitignore
+Monorepo root: /repo  (docker build context = repo root)
+Node.js version: 20 LTS
+Package manager: npm (individual per package — no root workspace)
+
+apps/api/
+  package.json         scripts: build=tsc, start=node dist/index.js
+  tsconfig.json        outDir=./dist, rootDir=../..   ← builds into apps/api/dist/
+  src/index.ts         entry point
+
+apps/frontend/
+  package.json         scripts: build=next build, start=next start
+  next.config.ts
+  src/                 Next.js App Router
+
+packages/shared/       imported by both api and frontend
+packages/db/           imported by api (prisma client)
+packages/ai-engine/    imported by api
 ```
+
+**Key facts:**
+- `apps/api/tsconfig.json` has `rootDir: "../.."` — tsc must run from repo root, not from `apps/api/`
+- `@ai-marketing/shared`, `@ai-marketing/db`, `@ai-marketing/ai-engine` linked via `node_modules` symlinks
+- API listens on `PORT` env var (default 3001), health: `GET /health`
+- Frontend listens on port 3000, env: `NEXT_PUBLIC_API_URL`
+- Prisma client binary baked into node_modules (no re-generate needed at runtime)
 
 ---
 
-## File: `apps/e2e/package.json`
+## File 1: `apps/api/Dockerfile`
 
-```json
-{
-  "name": "@ai-marketing/e2e",
-  "version": "1.0.0",
-  "private": true,
-  "scripts": {
-    "test": "playwright test",
-    "test:headed": "playwright test --headed",
-    "test:ui": "playwright test --ui",
-    "test:list": "playwright test --list"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.44.0"
-  }
-}
+Multi-stage Node 20 image. Build context = repo root.
+
+Requirements:
+- Stage `deps`: install ALL node_modules (root + packages/* + apps/api)
+- Stage `builder`: copy source, run `npx tsc -p apps/api/tsconfig.json` — produces `apps/api/dist/`
+- Stage `runner`: copy only `node_modules` + compiled `apps/api/dist/` — no dev deps, no source
+- USER nonroot (uid 1001)
+- EXPOSE 3001
+- HEALTHCHECK `curl -f http://localhost:3001/health || exit 1`
+- CMD `["node", "apps/api/dist/apps/api/src/index.js"]`
+  (outDir=apps/api/dist, rootDir=../.., so compiled path mirrors source path from root)
+
+Prisma note: copy `packages/db/node_modules/.prisma/` and `node_modules/.prisma/` into runner stage — Prisma needs the native binary.
+
+```dockerfile
+# apps/api/Dockerfile
+FROM node:20-alpine AS deps
+WORKDIR /repo
+
+# Copy all package.json files first (layer cache)
+COPY package.json package-lock.json* ./
+COPY apps/api/package.json apps/api/package-lock.json* ./apps/api/
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/db/package.json packages/db/package-lock.json* ./packages/db/
+COPY packages/ai-engine/package.json packages/ai-engine/package-lock.json* ./packages/ai-engine/
+
+# Install deps for each package
+RUN npm install --prefix apps/api --ignore-scripts 2>/dev/null || npm install --prefix apps/api
+RUN npm install --prefix packages/db --ignore-scripts 2>/dev/null || npm install --prefix packages/db
+RUN npm install --prefix packages/shared --ignore-scripts 2>/dev/null || npm install --prefix packages/shared
+RUN npm install --prefix packages/ai-engine --ignore-scripts 2>/dev/null || npm install --prefix packages/ai-engine
+
+# --- builder ---
+FROM node:20-alpine AS builder
+WORKDIR /repo
+
+COPY --from=deps /repo/node_modules ./node_modules
+COPY --from=deps /repo/apps/api/node_modules ./apps/api/node_modules
+COPY --from=deps /repo/packages/db/node_modules ./packages/db/node_modules
+COPY --from=deps /repo/packages/shared/node_modules* ./packages/shared/
+COPY --from=deps /repo/packages/ai-engine/node_modules* ./packages/ai-engine/
+
+# Copy source
+COPY apps/api ./apps/api
+COPY packages ./packages
+
+RUN npx tsc -p apps/api/tsconfig.json
+
+# --- runner ---
+FROM node:20-alpine AS runner
+WORKDIR /repo
+
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 appuser
+
+COPY --from=deps --chown=appuser:nodejs /repo/apps/api/node_modules ./apps/api/node_modules
+COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules ./packages/db/node_modules
+COPY --from=builder --chown=appuser:nodejs /repo/apps/api/dist ./apps/api/dist
+COPY --from=builder --chown=appuser:nodejs /repo/packages/db/prisma ./packages/db/prisma
+
+# Prisma engine binary
+COPY --from=deps /repo/node_modules/.prisma ./node_modules/.prisma
+COPY --from=deps /repo/packages/db/node_modules/.prisma ./packages/db/node_modules/.prisma
+
+USER appuser
+EXPOSE 3001
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+  CMD wget -qO- http://localhost:3001/health || exit 1
+
+ENV NODE_ENV=production
+CMD ["node", "apps/api/dist/apps/api/src/index.js"]
 ```
+
+**IMPORTANT:** Verify the actual compiled output path by checking what `tsc -p apps/api/tsconfig.json` produces given `outDir=./dist` and `rootDir=../..`. The entry point relative to repo root will be `apps/api/dist/apps/api/src/index.js`. If different, adjust CMD accordingly.
 
 ---
 
-## File: `apps/e2e/.gitignore`
+## File 2: `apps/frontend/Dockerfile`
 
+Standard Next.js standalone output.
+
+Requirements:
+- Stage `deps`: install `apps/frontend` deps
+- Stage `builder`: `npm run build` inside `apps/frontend` with `NEXT_TELEMETRY_DISABLED=1`
+- Stage `runner`: copy Next.js standalone output (`.next/standalone` + `.next/static`)
+- USER nonroot (uid 1001)
+- EXPOSE 3000
+- ENV `NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0`
+- CMD `["node", "server.js"]` (from standalone output)
+
+Add to `apps/frontend/next.config.ts`:
+```ts
+output: 'standalone'
 ```
-node_modules/
-playwright-report/
-test-results/
-.playwright/
-```
+(If `output: 'standalone'` already present — skip. If not — add it. Read the file first.)
 
----
+```dockerfile
+# apps/frontend/Dockerfile
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY apps/frontend/package.json apps/frontend/package-lock.json* ./
+RUN npm install --frozen-lockfile 2>/dev/null || npm install
 
-## File: `apps/e2e/playwright.config.ts`
+FROM node:20-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY apps/frontend .
+COPY packages/shared /repo/packages/shared
+ENV NEXT_TELEMETRY_DISABLED=1
+RUN npm run build
 
-```typescript
-import { defineConfig, devices } from '@playwright/test'
+FROM node:20-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0 \
+    NEXT_TELEMETRY_DISABLED=1
 
-export default defineConfig({
-  testDir: './tests',
-  timeout: 30_000,
-  expect: { timeout: 8_000 },
-  fullyParallel: false,
-  retries: 1,
-  use: {
-    baseURL: process.env.BASE_URL ?? 'http://localhost:3000',
-    trace: 'on-first-retry',
-  },
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-  ],
-})
-```
+RUN addgroup --system --gid 1001 nodejs && \
+    adduser --system --uid 1001 nextjs
 
----
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public 2>/dev/null || true
 
-## File: `apps/e2e/tests/auth.spec.ts`
-
-```typescript
-import { test, expect } from '@playwright/test'
-
-function uniqueEmail() {
-  return `e2e_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@test.com`
-}
-
-async function register(page: Parameters<Parameters<typeof test>[1]>[0], email: string) {
-  await page.goto('/register')
-  await page.getByLabel('Name').fill('E2E Tester')
-  await page.getByLabel('Email').fill(email)
-  await page.getByLabel('Password').fill('password123!')
-  await page.getByRole('button', { name: 'Register' }).click()
-  await page.waitForURL('/dashboard')
-}
-
-test.describe('Authentication', () => {
-  test('register → dashboard', async ({ page }) => {
-    await register(page, uniqueEmail())
-    await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
-  })
-
-  test('logout → /login, then login → dashboard', async ({ page }) => {
-    const email = uniqueEmail()
-    await register(page, email)
-
-    await page.getByRole('button', { name: 'Logout' }).click()
-    await page.waitForURL('/login')
-
-    await page.getByLabel('Email').fill(email)
-    await page.getByLabel('Password').fill('password123!')
-    await page.getByRole('button', { name: 'Sign In' }).click()
-    await page.waitForURL('/dashboard')
-    await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
-  })
-
-  test('wrong password → error visible', async ({ page }) => {
-    await page.goto('/login')
-    await page.getByLabel('Email').fill('nobody@e2e.test')
-    await page.getByLabel('Password').fill('wrongpassword')
-    await page.getByRole('button', { name: 'Sign In' }).click()
-    await expect(page.locator('p.text-red-600')).toBeVisible()
-  })
-
-  test('unauthenticated /dashboard → redirect to /login', async ({ page }) => {
-    await page.goto('/dashboard')
-    await expect(page).toHaveURL('/login')
-  })
-})
-```
-
----
-
-## File: `apps/e2e/tests/projects.spec.ts`
-
-```typescript
-import { test, expect } from '@playwright/test'
-
-function uniqueEmail() {
-  return `e2e_${Date.now()}_${Math.random().toString(36).slice(2, 6)}@test.com`
-}
-
-async function loginNew(page: Parameters<Parameters<typeof test>[1]>[0]) {
-  await page.goto('/register')
-  await page.getByLabel('Name').fill('E2E Tester')
-  await page.getByLabel('Email').fill(uniqueEmail())
-  await page.getByLabel('Password').fill('password123!')
-  await page.getByRole('button', { name: 'Register' }).click()
-  await page.waitForURL('/dashboard')
-}
-
-test.describe('Projects', () => {
-  test('new user sees empty state', async ({ page }) => {
-    await loginNew(page)
-    await expect(page.getByText('No projects yet')).toBeVisible()
-  })
-
-  test('create project → visible in dashboard', async ({ page }) => {
-    await loginNew(page)
-
-    await page.getByRole('link', { name: 'New Project' }).click()
-    await page.waitForURL('/projects/new')
-
-    const projectName = `E2E Project ${Date.now()}`
-    await page.getByPlaceholder('My Marketing Campaign').fill(projectName)
-    await page.getByRole('button', { name: 'Create Project' }).click()
-
-    // redirects to project tasks page
-    await page.waitForURL(/\/projects\/[0-9a-f-]+$/)
-
-    // back to dashboard — project should appear
-    await page.goto('/dashboard')
-    await expect(page.getByText(projectName)).toBeVisible()
-  })
-
-  test('project page shows task creation form', async ({ page }) => {
-    await loginNew(page)
-
-    await page.getByRole('link', { name: 'New Project' }).click()
-    await page.getByPlaceholder('My Marketing Campaign').fill('Task Form Test')
-    await page.getByRole('button', { name: 'Create Project' }).click()
-    await page.waitForURL(/\/projects\/[0-9a-f-]+$/)
-
-    await expect(page.getByRole('heading', { name: 'New Task' })).toBeVisible()
-    await expect(page.getByPlaceholder('Describe your task...')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Create Task' })).toBeVisible()
-  })
-})
+USER nextjs
+EXPOSE 3000
+CMD ["node", "server.js"]
 ```
 
 ---
 
-## Architecture context
+## File 3: Replace root `Dockerfile`
 
+Current `Dockerfile` at repo root is Python/FastAPI — wrong stack, leftover from early iteration.
+Replace entirely with a notice:
+
+```dockerfile
+# This file is intentionally minimal — the repo uses per-service Dockerfiles.
+# API:      apps/api/Dockerfile
+# Frontend: apps/frontend/Dockerfile
+# Compose:  docker-compose.yml (builds both)
 ```
-Frontend port: 3000   (Next.js, apps/frontend)
-API port:      3001   (Fastify, apps/api)
-Stack start:   docker-compose up (from repo root)
 
-Tests are run against a LIVE stack — they do NOT mock the API.
-Task creation requires ANTHROPIC_API_KEY (scoring via Claude).
-auth.spec.ts and projects.spec.ts do NOT need ANTHROPIC_API_KEY.
+---
 
-Playwright locators used (match existing HTML):
-  page.getByLabel('Name')                  → <label>Name</label> + adjacent input
-  page.getByLabel('Email')                 → <label>Email</label> + adjacent input
-  page.getByLabel('Password')              → <label>Password</label> + adjacent input
-  page.getByRole('button', { name: 'Register' })
-  page.getByRole('button', { name: 'Sign In' })
-  page.getByRole('button', { name: 'Logout' })
-  page.getByRole('link', { name: 'New Project' })
-  page.getByRole('heading', { name: 'Projects' })
-  page.getByRole('heading', { name: 'New Task' })
-  page.getByPlaceholder('My Marketing Campaign')
-  page.getByPlaceholder('Describe your task...')
-  page.locator('p.text-red-600')           → error message paragraph
+## Validation
 
-Running tests (requires docker stack):
-  cd apps/e2e
-  BASE_URL=http://localhost:3000 npx playwright test
+```bash
+# Syntax check (no actual build — needs Docker daemon):
+docker build -f apps/api/Dockerfile . --no-cache --target deps 2>&1 | tail -5
+docker build -f apps/frontend/Dockerfile . --no-cache --target deps 2>&1 | tail -5
+
+# tsc compile check (no Docker needed):
+npx tsc -p apps/api/tsconfig.json --noEmit 2>&1 | head -10
+
+# Verify next.config.ts has standalone:
+grep "standalone" apps/frontend/next.config.ts
 ```
+
+All must pass with 0 errors. If Docker daemon not available, tsc check + grep are sufficient.
 
 ---
 
 ## How to submit
 
-1. `git checkout -b agent/e2e-v1` from main
-2. Create all 5 files above exactly as specified
-3. `cd apps/e2e && npm install && npx playwright install chromium`
-4. `npx playwright test --list` — must show 7 tests, 0 errors
-5. `cd ../..` — do NOT run actual tests (needs docker stack)
-6. Commit with descriptive message
-7. Write report in `AGENTS_CHAT.md` under `## Wave 11 → Codex`
-8. Tell the human "done, agent/e2e-v1 ready for review"
+1. `git checkout -b agent/dockerfiles-v1` from main
+2. Create/modify files listed above
+3. Run validation commands
+4. Commit with message: `feat(docker): add API and frontend Dockerfiles, replace stale root Dockerfile`
+5. Write report to `AGENTS_CHAT.md` under `## Wave 12 → Codex`
+6. Report to human: "done, agent/dockerfiles-v1 ready for review"
