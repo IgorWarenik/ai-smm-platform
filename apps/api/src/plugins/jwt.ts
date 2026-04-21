@@ -3,9 +3,10 @@ import type { FastifyInstance } from 'fastify'
 import fp from 'fastify-plugin'
 
 export interface JWTPayload {
-  sub: string    // userId
+  sub: string
   email: string
   type: 'access' | 'refresh'
+  jti?: string
 }
 
 declare module '@fastify/jwt' {

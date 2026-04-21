@@ -1,16 +1,17 @@
 import { prisma } from '@ai-marketing/db'
 import { LoginSchema, RefreshTokenSchema, RegisterSchema } from '@ai-marketing/shared'
 import bcrypt from 'bcryptjs'
+import { randomUUID } from 'crypto'
 import type { FastifyInstance } from 'fastify'
 import { ACCESS_TOKEN_TTL, REFRESH_TOKEN_TTL } from '../plugins/jwt'
 
 function issueTokenPair(app: FastifyInstance, userId: string, email: string) {
   const accessToken = app.jwt.sign(
-    { sub: userId, email, type: 'access' as const },
+    { sub: userId, email, type: 'access' as const, jti: randomUUID() },
     { expiresIn: ACCESS_TOKEN_TTL },
   )
   const refreshToken = app.jwt.sign(
-    { sub: userId, email, type: 'refresh' as const },
+    { sub: userId, email, type: 'refresh' as const, jti: randomUUID() },
     { expiresIn: REFRESH_TOKEN_TTL },
   )
   return { accessToken, refreshToken }
@@ -19,9 +20,10 @@ function issueTokenPair(app: FastifyInstance, userId: string, email: string) {
 async function persistRefreshToken(userId: string, token: string) {
   await prisma.refreshToken.create({
     data: {
+      id: randomUUID(),
       token,
       userId,
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
     },
   })
 }
