@@ -1,49 +1,58 @@
 # Agent Brief — Codex
-## Wave 5 | Branch: `agent/hardening-v2`
+## Wave 6 | Branch: `agent/hardening-v3`
 
 **Stack:** Fastify + TypeScript + Prisma. Claude is orchestrator.
 
 **Rules:**
-- New branch from main: `git checkout -b agent/hardening-v2`
+- New branch from main: `git checkout -b agent/hardening-v3`
 - Work ONLY in assigned files
 - Do NOT merge — Claude reviews
-- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 5 → Codex`
-- Validation: `npx tsc --noEmit -p apps/api/tsconfig.json` + `npx vitest run` must pass (110 currently)
+- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 6 → Codex`
+- Validation: `npx tsc --noEmit -p apps/api/tsconfig.json` + `npx vitest run` (116 currently)
 
 ---
 
 ## Your Files
 
 ```
-apps/api/src/app.ts                   ← rate limiting plugin
-apps/api/src/routes/projects.ts       ← UUID param validation + DELETE test coverage
-apps/api/src/routes/tasks.ts          ← DELETE task endpoint
-apps/api/tests/projects.test.ts       ← tests for DELETE project
-apps/api/tests/tasks.test.ts          ← tests for DELETE task + status filter
+apps/api/package.json                        ← add @fastify/rate-limit
+apps/api/src/app.ts                          ← register rate-limit plugin
+apps/api/src/routes/auth.ts                  ← apply rate-limit to register + login
+apps/api/src/routes/projects.ts              ← add DELETE /:projectId/members/:userId
+apps/api/tests/projects.test.ts              ← tests for member removal
 ```
 
-Do NOT touch: knowledge.ts, auth.ts, approvals.ts, feedback.ts, callback.ts, profile.ts, any packages/
+Do NOT touch: tasks.ts, approvals.ts, knowledge.ts, feedback.ts, callback.ts, profile.ts, any packages/
 
 ---
 
-## Task 1 — Rate limiting on auth routes
+## Task 1 — Install and register @fastify/rate-limit
 
-**File:** `apps/api/src/app.ts`
+### 1a. Add to `apps/api/package.json`
 
-Install is already done (or use inline counter). Add `@fastify/rate-limit` registration scoped to `/api/auth`:
+In the `"dependencies"` section, add:
+```json
+"@fastify/rate-limit": "^9.1.0"
+```
+
+### 1b. Register in `apps/api/src/app.ts`
+
+Add after other plugin registrations (e.g., after `@fastify/sensible`):
 
 ```typescript
 import rateLimit from '@fastify/rate-limit'
 
-// Inside buildApp(), before route registration:
+// Inside buildApp(), after sensible:
 await app.register(rateLimit, {
-  global: false,          // opt-in per route
+  global: false,
   max: 20,
   timeWindow: '1 minute',
 })
 ```
 
-Then in `apps/api/src/routes/auth.ts`, add `config: { rateLimit: { max: 20, timeWindow: '1 minute' } }` option to the `POST /register` and `POST /login` handlers:
+### 1c. Apply to auth routes in `apps/api/src/routes/auth.ts`
+
+Add `config` option to the `POST /register` and `POST /login` handlers:
 
 ```typescript
 app.post('/register', {
@@ -59,94 +68,77 @@ app.post('/login', {
 })
 ```
 
-**If `@fastify/rate-limit` is not in package.json**, skip this task and note it as "package missing — needs install". Do NOT run npm install.
-
 **Acceptance criteria:**
-- `buildApp()` still succeeds
-- Auth route handlers still work
+- Auth routes still pass all existing tests
+- `buildApp()` succeeds with rate-limit registered
 - tsc passes
 
 ---
 
-## Task 2 — DELETE /api/projects/:projectId/tasks/:taskId
+## Task 2 — DELETE /api/projects/:projectId/members/:userId
 
-**File:** `apps/api/src/routes/tasks.ts`
+**File:** `apps/api/src/routes/projects.ts`
 
-Add after the existing `GET /:taskId` handler:
+Add after the existing `POST /:projectId/members` handler:
 
 ```typescript
-// DELETE /api/projects/:projectId/tasks/:taskId
-app.delete('/:taskId', async (request, reply) => {
-  const { projectId, taskId } = request.params as { projectId: string; taskId: string }
+// DELETE /api/projects/:projectId/members/:userId — remove member (OWNER only)
+app.delete('/:projectId/members/:memberId', async (request, reply) => {
+  const { projectId, memberId } = request.params as { projectId: string; memberId: string }
+  if (!assertUuid(reply, projectId, 'projectId')) return
+  if (!assertUuid(reply, memberId, 'memberId')) return
   const userId = request.user.sub
 
-  const membership = await prisma.projectMember.findUnique({
+  const callerMembership = await prisma.projectMember.findUnique({
     where: { userId_projectId: { userId, projectId } },
   })
-  if (!membership) return reply.notFound('Project not found')
+  if (!callerMembership) return reply.notFound('Project not found')
+  if (callerMembership.role !== MemberRole.OWNER) {
+    return reply.forbidden('Only an OWNER can remove members')
+  }
 
-  const task = await prisma.task.findUnique({ where: { id: taskId } })
-  if (!task || task.projectId !== projectId) return reply.notFound('Task not found')
+  // Cannot remove yourself if you are the last OWNER
+  if (memberId === userId) {
+    const ownerCount = await prisma.projectMember.count({
+      where: { projectId, role: MemberRole.OWNER },
+    })
+    if (ownerCount <= 1) {
+      return reply.badRequest('Cannot remove the last OWNER from the project')
+    }
+  }
 
-  await prisma.task.delete({ where: { id: taskId } })
+  const target = await prisma.projectMember.findUnique({
+    where: { userId_projectId: { userId: memberId, projectId } },
+  })
+  if (!target) return reply.notFound('Member not found')
+
+  await prisma.projectMember.delete({
+    where: { userId_projectId: { userId: memberId, projectId } },
+  })
   return reply.code(204).send()
 })
 ```
 
+Note: `assertUuid` and `MemberRole` are already imported in `projects.ts` — do NOT add duplicate imports.
+
 **Acceptance criteria:**
-- Member DELETE existing task → 204 no body
-- Non-member → 404
-- Task not found → 404
-- Task from different project → 404
+- OWNER removes a non-owner member → 204 no body
+- OWNER removes another owner (not last) → 204 no body
+- OWNER tries to remove self (last owner) → 400
+- Non-owner tries to remove member → 403
+- Member not found → 404
+- Non-member caller → 404
 
 ---
 
-## Task 3 — UUID validation helper for path params
+## Task 3 — Tests for member removal
 
-**File:** `apps/api/src/routes/projects.ts` (and optionally tasks.ts)
+**File:** `apps/api/tests/projects.test.ts`
 
-Add a lightweight UUID format check at the top of the file (below imports):
-
-```typescript
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-
-function assertUuid(reply: FastifyReply, value: string, label: string): boolean {
-  if (!UUID_RE.test(value)) {
-    reply.badRequest(`${label} must be a valid UUID`)
-    return false
-  }
-  return true
-}
-```
-
-Use it at the start of handlers that take `:projectId` and `:taskId` path params:
+Add a new `describe` block at the end:
 
 ```typescript
-app.get('/:projectId', async (request, reply) => {
-  const { projectId } = request.params as { projectId: string }
-  if (!assertUuid(reply, projectId, 'projectId')) return
-  // ... rest of handler
-})
-```
-
-Apply to: `GET /:projectId`, `PATCH /:projectId`, `DELETE /:projectId` in `projects.ts`.
-Apply to: `GET /:taskId`, `DELETE /:taskId` in `tasks.ts`.
-
-**Acceptance criteria:**
-- `GET /api/projects/not-a-uuid` → 400 with message "projectId must be a valid UUID"
-- Valid UUID → passes through unchanged
-- tsc passes
-
----
-
-## Task 4 — Tests
-
-**File:** `apps/api/tests/tasks.test.ts`
-
-Add at the end of the file:
-
-```typescript
-describe('DELETE /api/projects/:projectId/tasks/:taskId', () => {
+describe('DELETE /api/projects/:projectId/members/:userId', () => {
   let app: FastifyInstance
 
   beforeEach(async () => {
@@ -156,40 +148,44 @@ describe('DELETE /api/projects/:projectId/tasks/:taskId', () => {
 
   afterEach(async () => { await app.close() })
 
-  it('204 — member deletes own task', async () => {
+  it('204 — owner removes member', async () => {
     const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.task.findUnique.mockResolvedValue({ id: 'task-1', projectId: PROJECT_ID })
-    db.task.delete.mockResolvedValue({})
+    db.projectMember.findUnique.mockImplementation(({ where }: any) => {
+      if (where?.userId_projectId?.userId === USER_ID) return Promise.resolve({ role: 'OWNER' })
+      return Promise.resolve({ role: 'MEMBER' })
+    })
+    db.projectMember.delete.mockResolvedValue({})
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/api/projects/${PROJECT_ID}/tasks/task-1`,
+      url: `/api/projects/${PROJECT_ID}/members/${OTHER_USER_ID}`,
       headers: { authorization: `Bearer ${token}` },
     })
     expect(res.statusCode).toBe(204)
   })
 
-  it('404 — non-member cannot delete', async () => {
-    const token = await getToken(app)
-    db.projectMember.findUnique.mockResolvedValue(null)
-
-    const res = await app.inject({
-      method: 'DELETE',
-      url: `/api/projects/${PROJECT_ID}/tasks/task-1`,
-      headers: { authorization: `Bearer ${token}` },
-    })
-    expect(res.statusCode).toBe(404)
-  })
-
-  it('404 — task not found', async () => {
+  it('403 — non-owner cannot remove member', async () => {
     const token = await getToken(app)
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.task.findUnique.mockResolvedValue(null)
 
     const res = await app.inject({
       method: 'DELETE',
-      url: `/api/projects/${PROJECT_ID}/tasks/nonexistent`,
+      url: `/api/projects/${PROJECT_ID}/members/${OTHER_USER_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(403)
+  })
+
+  it('404 — member not found', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockImplementation(({ where }: any) => {
+      if (where?.userId_projectId?.userId === USER_ID) return Promise.resolve({ role: 'OWNER' })
+      return Promise.resolve(null)
+    })
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/members/${OTHER_USER_ID}`,
       headers: { authorization: `Bearer ${token}` },
     })
     expect(res.statusCode).toBe(404)
@@ -197,65 +193,58 @@ describe('DELETE /api/projects/:projectId/tasks/:taskId', () => {
 })
 ```
 
-Also add a test for the UUID validation:
-
+You'll need `OTHER_USER_ID` — check if it already exists in the test file. If not, add at the top:
 ```typescript
-describe('UUID validation', () => {
-  let app: FastifyInstance
-
-  beforeEach(async () => { app = await buildApp() })
-  afterEach(async () => { await app.close() })
-
-  it('400 — invalid projectId returns bad request', async () => {
-    const token = await getToken(app)
-    const res = await app.inject({
-      method: 'GET',
-      url: '/api/projects/not-a-uuid',
-      headers: { authorization: `Bearer ${token}` },
-    })
-    expect(res.statusCode).toBe(400)
-  })
-})
+const OTHER_USER_ID = 'b0000000-0000-0000-0000-000000000002'
 ```
 
-Check existing mock in tasks.test.ts — add `delete: vi.fn()` to `task` mock if missing.
+Also add `projectMember.delete` and `projectMember.count` mocks to the existing `db` mock if missing:
+```typescript
+projectMember: {
+  findUnique: vi.fn(),
+  findMany: vi.fn().mockResolvedValue([]),
+  create: vi.fn(),
+  update: vi.fn(),
+  delete: vi.fn(),   // ← add if missing
+  count: vi.fn().mockResolvedValue(1),  // ← add if missing
+},
+```
 
-**Expected test count after this wave:** 110 + ~4 = **~114 passing**
+**Expected test count:** 116 + 3 = **119 passing**
 
 ---
 
 ## Architecture context
 
 ```
-Current passing tests: 110
-Target: ≥114
+Current passing tests: 116
+Target: ≥119
 
-Existing task mock in tasks.test.ts:
-  task: { create, findMany, findUnique, count }
-  ← Need to ADD: task.delete mock
+@fastify/rate-limit version: use ^9.1.0 (compatible with Fastify 4.x)
+  If import fails at runtime, check if the version needs adjustment.
 
-Existing project routes (projects.ts):
-  POST   /                    create
-  GET    /                    list
-  GET    /:projectId          get one
-  PATCH  /:projectId          update
-  DELETE /:projectId          delete (already exists!)
-  POST   /:projectId/members  add member
+Existing projects.ts imports (do NOT duplicate):
+  import type { FastifyInstance, FastifyReply } from 'fastify'
+  import { MemberRole } from '@ai-marketing/shared'
+  const UUID_RE = /^[0-9a-f]{8}-.../
+  function assertUuid(...) — already exists in projects.ts
 
-UUID_RE helper goes in BOTH projects.ts and tasks.ts as a module-level const.
+The new DELETE endpoint uses `:memberId` in path (not `:userId`)
+to avoid shadowing the auth user ID variable.
 ```
 
 ---
 
 ## How to submit
 
-1. `git checkout -b agent/hardening-v2` from main
-2. Make changes
-3. `npx tsc --noEmit -p apps/api/tsconfig.json` — zero errors
-4. `npx vitest run` — all pass
-5. Commit with descriptive message
-6. Write report in `AGENTS_CHAT.md` under `## Wave 5 → Codex`:
+1. `git checkout -b agent/hardening-v3` from main
+2. Install: edit `apps/api/package.json` to add `@fastify/rate-limit`; run `npm install` in `apps/api/`
+3. Make code changes
+4. `npx tsc --noEmit -p apps/api/tsconfig.json` — zero errors
+5. `npx vitest run` — all pass
+6. Commit with descriptive message
+7. Write report in `AGENTS_CHAT.md` under `## Wave 6 → Codex`:
    - What was done
    - Test count before → after
-   - Any deviations (especially if @fastify/rate-limit was missing)
-7. Tell the human "done, agent/hardening-v2 ready for review"
+   - Any deviations (especially if rate-limit version needed adjustment)
+8. Tell the human "done, agent/hardening-v3 ready for review"
