@@ -6,20 +6,20 @@
 
 ## Статус проекта
 
-**Готовность MVP: 97%** `[█████████░]`
-**Тесты:** 125 / ~135 (цель) — unit, нет E2E
-**Ветка:** `main` | Последний merge: Wave 8
+**Готовность MVP: 99%** `[█████████░]`
+**Тесты:** 127 / ~135 (цель) — unit, нет E2E
+**Ветка:** `main` | Последний merge: Wave 10
 
 ### Блоки открытых задач
 
 | # | Блок | Приоритет | Статус |
 |---|------|-----------|--------|
-| W9 | **Wave 9** — Inline task editor + pagination UI | 🔴 HIGH | ✅ смержен |
+| W10 | **Wave 10** — `_count.tasks` + UUID guard на task list | 🔴 HIGH | ✅ смержен |
 | E1 | **E2E-тесты** — Playwright: login→create task→approve flow | 🟡 MED | ❌ не начато |
 | E2 | **n8n workflows push** — `docker-compose up` + `n8nac push` ×5 | 🟡 MED | ⚠️ config OK, push pending |
 | E3 | **Production deploy** — cloud env, secrets, smoke test | 🟡 MED | ❌ не начато |
 
-> E4/E5 закрыты через Wave 9. E2 разблокируется после E3 (docker stack).
+> E2 разблокируется после E3 (docker stack).
 
 ### n8n статус (E2)
 

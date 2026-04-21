@@ -9,6 +9,19 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 10 — _count.tasks + UUID guard (2026-04-21)
+
+### Codex (`agent/hardening-v6`) — ACCEPTED ✅ (реализовано Claude)
+
+- `apps/api/src/routes/projects.ts`: `GET /` — добавлен `include: { _count: { select: { tasks: true } } }` в findMany
+- `apps/api/src/routes/projects.ts`: `GET /:projectId` — добавлен `include: { _count: { select: { tasks: true } } }` в findUnique
+- `apps/api/src/routes/tasks.ts`: `GET /` (task list) — добавлен `assertUuid` guard на projectId
+- `apps/api/tests/projects.test.ts`: +1 тест `_count.tasks` в списке проектов
+- `apps/api/tests/tasks.test.ts`: +1 тест UUID validation на task list
+- tsc: 0 errors | 125 → 127 tests
+
+---
+
 ## Wave 9 — Inline editor + pagination (2026-04-21)
 
 ### Gemini (`agent/frontend-v6`) — ACCEPTED ✅ (код реализован Claude, Gemini сломал Wave 8 в своём PR)
