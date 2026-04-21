@@ -134,9 +134,9 @@
 
 ---
 
-## Текущая задача (Wave 7 — 2026-04-21)
+## Текущая задача (Wave 8 — 2026-04-21)
 
-**Статус:** Waves 5–6 ✅ смержены. 119/119 тестов.
+**Статус:** Waves 1–7 ✅ смержены. 121/121 тестов.
 
 | Этап | Статус |
 |------|--------|
@@ -149,8 +149,9 @@
 | Wave 4 Knowledge CRUD | ✅ |
 | Wave 5 DELETE task + UUID guards + Frontend UX | ✅ |
 | Wave 6 Rate limit + member removal + settings page | ✅ |
-| Wave 7 GET /members + nav active state + UX polish | ⏳ Codex ✅, Gemini ожидает |
+| Wave 7 GET /members + nav active state + UX polish | ✅ |
+| Wave 8 | ⏳ |
 
-**Следующий шаг:** принять Gemini Wave 7 после отчёта. 121/121 тестов.
+**Следующий шаг:** Wave 8 briefs выданы Codex + Gemini.
 
 **n8n риск:** `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, существующие workflow в `apps/workflows/local_5678_igor_g/personal`. Перед правками workflow запускать `npx --yes n8nac list`.
