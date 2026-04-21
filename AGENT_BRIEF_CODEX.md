@@ -1,174 +1,254 @@
 # Agent Brief — Codex
-## Branch: `agent/routes`
+## Branch: `agent/hardening`
 
-You are working on the **AI Marketing Platform** — a Fastify (Node.js/TypeScript) backend with Prisma + PostgreSQL, Redis, pgvector, and n8n workflows.
+**Stack:** Fastify + TypeScript + Prisma + Zod. You are a subcontractor; Claude is the orchestrator.
 
-**You are a subcontractor. Claude is the orchestrator.**  
-- Work ONLY in your assigned files (listed below)  
-- Do NOT touch packages/, schema.prisma, or any test files  
-- Do NOT merge your own PR — Claude reviews and merges  
-- When done, commit to `agent/routes` and notify the human
+**Rules:**
+- Work ONLY in your assigned files
+- Do NOT merge — Claude reviews and merges
+- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 3 → Codex`
+- Validation: `npx tsc --noEmit -p apps/api/tsconfig.json` + `npx vitest run` must pass
 
 ---
 
 ## Your Files (ownership)
 
 ```
-apps/api/src/routes/knowledge.ts      ← PRIMARY
-apps/api/src/lib/sse.ts               ← PRIMARY
+packages/shared/src/schemas.ts        ← PRIMARY
+apps/api/src/routes/tasks.ts          ← PRIMARY
+apps/api/src/index.ts                 ← PRIMARY (env validation)
+apps/api/tests/feedback.test.ts       ← PRIMARY (new file)
 ```
 
-Do NOT touch any other file.
+Do NOT touch: auth.ts, approvals.ts, knowledge.ts, projects.ts, profile.ts, callback.ts, feedback.ts, sse.ts, any package outside shared/
 
 ---
 
-## Tasks
+## Task 1 — Approval schema: enforce MIN_REVISION_FEEDBACK_CHARS
 
-### Task 1 — knowledge.ts: withProjectContext on embedding UPDATE (F-005 P1)
+**File:** `packages/shared/src/schemas.ts`
 
-**Problem:** When a knowledge item is created, the embedding is computed asynchronously and written back via `prisma.knowledgeItem.update()` — but this write bypasses Row-Level Security because it doesn't use `withProjectContext()`.
+**Problem:** `CreateApprovalSchema` has `comment: z.string().max(2000).optional()`. When `decision === REVISION_REQUESTED`, `comment` is the revision instruction passed to Scenario D agents. If the comment is missing or too short, agents receive vague instructions.
 
-**File:** `apps/api/src/routes/knowledge.ts`
+**Import** `MIN_REVISION_FEEDBACK_CHARS` from the ai-engine package — but since shared cannot import ai-engine (circular dep risk), hardcode the value as a local constant:
 
-**Find** the async embedding update code (it fires after the item is created and the HTTP response is sent). It looks roughly like:
 ```typescript
-// async background write — runs after reply sent
-embedText(body.content).then(async (vector) => {
-  await prisma.knowledgeItem.update({
-    where: { id: item.id },
-    data: { embedding: ... }
-  })
+const MIN_REVISION_CHARS = 50  // mirrors MIN_REVISION_FEEDBACK_CHARS in ai-engine
+```
+
+**Update** `CreateApprovalSchema` using `.superRefine()`:
+
+```typescript
+export const CreateApprovalSchema = z.object({
+  decision: z.nativeEnum(ApprovalDecision),
+  comment: z.string().max(2000).optional(),
+}).superRefine((data, ctx) => {
+  if (data.decision === ApprovalDecision.REVISION_REQUESTED) {
+    if (!data.comment || data.comment.trim().length < MIN_REVISION_CHARS) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.too_small,
+        minimum: MIN_REVISION_CHARS,
+        type: 'string',
+        inclusive: true,
+        message: `Revision feedback must be at least ${MIN_REVISION_CHARS} characters`,
+        path: ['comment'],
+      })
+    }
+  }
 })
 ```
 
-**Fix:** Wrap the update in `withProjectContext(projectId, serviceUserId, ...)`:
-```typescript
-const serviceUserId = process.env.INTERNAL_SERVICE_USER_ID ?? '00000000-0000-0000-0000-000000000000'
-embedText(body.content).then(async (vector) => {
-  await withProjectContext(projectId, serviceUserId, async (tx) => {
-    await tx.knowledgeItem.update({
-      where: { id: item.id },
-      data: { embedding: `[${vector.join(',')}]` }
-    })
-  })
-}).catch((err) => {
-  // log but don't throw — embedding failure must not affect the created item
-  console.error({ err, itemId: item.id }, 'Failed to write embedding')
-})
-```
-
-**Also:** The `/search` endpoint calls `retrieveContext()` directly without project isolation at the DB layer. Ensure the search route uses `withProjectContext` for any direct Prisma reads (the RAG function itself handles isolation, but any additional Prisma reads in the route must use `withProjectContext`).
-
-**Acceptance criteria (from cavekit-knowledge.md R3):**
-- Every read/search filters by project_id
-- Item in project A never returned for project B
+**Acceptance criteria:**
+- `REVISION_REQUESTED` with `comment: undefined` → Zod throws 400
+- `REVISION_REQUESTED` with `comment: 'too short'` (< 50 chars) → Zod throws 400
+- `REVISION_REQUESTED` with `comment: 'x'.repeat(50)` → passes validation
+- `APPROVED` with no comment → still passes (no change to APPROVED/REJECTED behavior)
 
 ---
 
-### Task 2 — knowledge.ts: pagination on GET /knowledge (F-007 P1)
+## Task 2 — Add TaskQuerySchema with status filter
 
-**Problem:** `GET /api/projects/:projectId/knowledge` returns all items without pagination.
+**File:** `packages/shared/src/schemas.ts`
 
-**Fix:** Apply `PaginationSchema` (already exported from `@ai-marketing/shared`) the same way other list endpoints do:
+**Problem:** Frontend needs to filter tasks by status (e.g., show only AWAITING_APPROVAL). Current `PaginationSchema` has no status filter.
+
+**Add** after `PaginationSchema`:
 
 ```typescript
-import { PaginationSchema } from '@ai-marketing/shared'
+export const TaskQuerySchema = PaginationSchema.extend({
+  status: z.nativeEnum(TaskStatus).optional(),
+})
+export type TaskQueryInput = z.infer<typeof TaskQuerySchema>
+```
 
-// In the GET / handler:
+**File:** `apps/api/src/routes/tasks.ts`
+
+**Update** `GET /api/projects/:projectId/tasks` handler to use `TaskQuerySchema`:
+
+```typescript
+import { TaskQuerySchema } from '@ai-marketing/shared'
+
+// In the GET / handler, replace:
 const query = PaginationSchema.parse(request.query)
+// With:
+const query = TaskQuerySchema.parse(request.query)
 
-const [items, total] = await tx.$transaction([
-  tx.knowledgeItem.findMany({
-    where: { projectId },
+// And add status to the where clause:
+const whereClause = { projectId, ...(query.status && { status: query.status }) }
+
+const [tasks, total] = await tx.$transaction([
+  tx.task.findMany({
+    where: whereClause,
     skip: (query.page - 1) * query.pageSize,
     take: query.pageSize,
     orderBy: { createdAt: 'desc' },
   }),
-  tx.knowledgeItem.count({ where: { projectId } }),
+  tx.task.count({ where: whereClause }),
 ])
-
-return reply.send({ data: items, total, page: query.page, pageSize: query.pageSize })
 ```
 
-**Acceptance criteria (from cavekit-knowledge.md R2):**
-- Member → items with matching project_id
-- Items from other projects never appear
-- Response is paginated
+**Acceptance criteria:**
+- `GET /tasks` with no `status` param → returns all tasks (existing behavior)
+- `GET /tasks?status=AWAITING_APPROVAL` → returns only tasks with that status
+- `GET /tasks?status=INVALID` → 400 (Zod validation error)
 
 ---
 
-### Task 3 — sse.ts: per-task Set instead of last-write-wins (F-009 P1)
+## Task 3 — Startup env validation (fail-fast)
 
-**Problem:** Current `sseManager` uses `Map<taskId, Set<fn>>` correctly for local clients, but `sseClients` (the deprecated compat shim) has a broken `delete` that does nothing — it can't delete by taskId without the function reference. Any code still using `sseClients.set()` / `sseClients.delete()` loses subscribers on overwrite.
+**File:** `apps/api/src/index.ts`
 
-**File:** `apps/api/src/lib/sse.ts`
+**Problem:** Missing required env vars (DATABASE_URL, JWT_SECRET, etc.) cause cryptic runtime errors deep in the call stack. Better to fail at boot with a clear message.
 
-**Fix:** Remove the broken `sseClients` shim entirely. Verify no code in `apps/api/src/` still imports `sseClients`. If any code uses `sseClients`, migrate it to `sseManager.register()` / `sseManager.unregister()` / `sseManager.publish()`.
+**Add** a validation function before `buildApp()`:
 
-Check usages:
-```bash
-grep -rn "sseClients" apps/api/src/
-```
-
-If zero hits → just remove the export from sse.ts.  
-If hits → migrate them to `sseManager`.
-
-**Also verify** that `tasks.ts` (the SSE stream endpoint) uses `sseManager.register()` and `sseManager.unregister()` with the send function reference, not a task-id-only delete. It should already do this — confirm and leave it as-is if correct.
-
-**Acceptance criteria (from cavekit-tasks.md R8):**
-- Multiple simultaneous subscribers on the same taskId all receive events
-- Unregistering one subscriber does not drop others
-
----
-
-## Environment / Architecture context
-
-```
-apps/api/src/
-  app.ts          — Fastify app builder (do not touch)
-  routes/
-    auth.ts       — DO NOT TOUCH (owned by Gemini)
-    knowledge.ts  ← YOUR FILE
-    projects.ts   — DO NOT TOUCH
-    tasks.ts      — DO NOT TOUCH
-    approvals.ts  — DO NOT TOUCH
-    callback.ts   — DO NOT TOUCH
-    profile.ts    — DO NOT TOUCH
-    feedback.ts   — DO NOT TOUCH
-  lib/
-    sse.ts        ← YOUR FILE
-  services/
-    scoring.ts    — DO NOT TOUCH
-
-packages/
-  shared/src/schemas.ts  — read-only (PaginationSchema, etc.)
-  db/src/rls.ts          — read-only (withProjectContext)
-  ai-engine/src/         — DO NOT TOUCH
-```
-
-Key imports available:
 ```typescript
-import { withProjectContext } from '@ai-marketing/db'
-import { PaginationSchema } from '@ai-marketing/shared'
-import { embedText } from '@ai-marketing/ai-engine'
+function validateEnv(): void {
+  const required = [
+    'DATABASE_URL',
+    'JWT_SECRET',
+    'JWT_REFRESH_SECRET',
+    'INTERNAL_API_TOKEN',
+  ]
+  const missing = required.filter((k) => !process.env[k]?.trim())
+  if (missing.length > 0) {
+    console.error(`Missing required environment variables: ${missing.join(', ')}`)
+    process.exit(1)
+  }
+}
+
+async function main() {
+  validateEnv()    // ← add this line at the top of main()
+  const app = await buildApp()
+  ...
+}
 ```
+
+**Important:** Do NOT call `validateEnv()` at module load time — only inside `main()`. Tests call `buildApp()` directly without `main()`, so this must not run during tests.
+
+**Acceptance criteria:**
+- With all required vars set → app starts normally
+- With `DATABASE_URL` missing → process logs the missing key and exits with code 1
+- Tests are NOT affected (they call `buildApp()` directly, not `main()`)
 
 ---
 
-## TypeScript / style rules
+## Task 4 — Write `apps/api/tests/feedback.test.ts`
 
-- All params must be typed (no implicit `any`)
-- Non-member requests → `reply.notFound()` (404), not `reply.forbidden()` (403)
-- Errors from external calls (embeddings, etc.) must be caught and logged, not re-thrown to the client
-- No new dependencies — use what's already in package.json
+**File:** `apps/api/tests/feedback.test.ts` (new file)
+
+**Pattern:** Follow the exact same mock pattern as `tasks.test.ts` or `knowledge.test.ts`. Key elements:
+- `beforeAll` sets env vars
+- `vi.mock('@ai-marketing/db', ...)` with all needed prisma models
+- `vi.mock('@ai-marketing/ai-engine', ...)` with `renderTokenPrometheusMetrics`
+- `vi.mock('bcryptjs', ...)` 
+- `mockWPC.mockImplementation(async (_pid, _uid, cb) => cb(db))` in each `beforeEach`
+- `db.$transaction.mockImplementation(...)` for both array and callback forms
+- `getToken()` helper to get a real JWT via mocked login
+
+**Models needed in prisma mock:**
+```typescript
+prisma: {
+  user: { findUnique: vi.fn(), create: vi.fn() },
+  refreshToken: { create: vi.fn().mockResolvedValue({}), findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}), updateMany: vi.fn().mockResolvedValue({}) },
+  projectMember: { findUnique: vi.fn() },
+  task: { findFirst: vi.fn() },
+  agentFeedback: {
+    create: vi.fn(),
+    findMany: vi.fn().mockResolvedValue([]),
+    count: vi.fn().mockResolvedValue(0),
+  },
+  $transaction: vi.fn(),
+}
+```
+
+**Test suites to write:**
+
+### GET /api/projects/:projectId/tasks/:taskId/feedback
+URL pattern: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}/feedback`
+
+| Case | Setup | Expected |
+|------|-------|----------|
+| 200 — member gets list | membership: MEMBER, task exists, agentFeedback.findMany: [{...}] | 200, data array |
+| 404 — non-member | membership: null | 404 |
+| 404 — task not found | membership: MEMBER, task.findFirst: null | 404 |
+
+### POST /api/projects/:projectId/tasks/:taskId/feedback
+Body: `{ agentType: 'MARKETER', score: 4, comment: 'Good output, minor tone issues' }`
+
+| Case | Setup | Expected |
+|------|-------|----------|
+| 201 — creates feedback | membership: MEMBER, task exists, agentFeedback.create returns record | 201, data |
+| 400 — invalid agentType | membership: MEMBER, agentType: 'INVALID' | 400 |
+| 400 — score out of range | membership: MEMBER, score: 6 | 400 |
+| 404 — non-member | membership: null | 404 |
+| 404 — task not found | membership: MEMBER, task.findFirst: null | 404 |
+
+**IDs must be valid UUIDs:**
+```typescript
+const PROJECT_ID = 'a0000000-0000-0000-0000-000000000001'
+const TASK_ID = 'b0000000-0000-0000-0000-000000000002'
+const USER_ID = 'c0000000-0000-0000-0000-000000000003'
+```
+
+Note: the route is registered as `/api/projects/:projectId/tasks/:taskId/feedback` — check `apps/api/src/app.ts` for the exact prefix.
+
+**Acceptance criteria:**
+- All 8 test cases pass
+- `npx vitest run apps/api/tests/feedback.test.ts` → green
+- No imports from real DB/Redis
+
+---
+
+## Context
+
+```
+Route registration (apps/api/src/app.ts):
+  feedbackRoutes registered under /api/projects/:projectId/tasks/:taskId/feedback
+
+AgentType enum (packages/shared/src/enums.ts):
+  MARKETER | CONTENT_MAKER | EVALUATOR
+
+Valid agentType values: 'MARKETER', 'CONTENT_MAKER', 'EVALUATOR'
+```
+
+```typescript
+// Key imports:
+import { withProjectContext } from '@ai-marketing/db'
+import { TaskQuerySchema, CreateApprovalSchema } from '@ai-marketing/shared'
+```
 
 ---
 
 ## How to submit
 
-1. Work on branch `agent/routes`
+1. Work on new branch `agent/hardening` (create from main: `git checkout -b agent/hardening`)
 2. Run `npx tsc --noEmit -p apps/api/tsconfig.json` — must be clean
-3. Commit with descriptive message
-4. Tell the human "done, branch agent/routes ready for review"
-
-The human will show Claude your diff. Claude will review, run `/ck:check`, and merge if clean.
+3. Run `npx tsc --noEmit -p packages/shared/tsconfig.json` — must be clean
+4. Run `npx vitest run` — must be 103 passed (95 existing + 8 new feedback tests)
+5. Commit all changes with descriptive message
+6. Write report in `AGENTS_CHAT.md` under `## Wave 3 → Codex`:
+   - What was done
+   - Test count: before → after
+   - Any deviations from the brief
+7. Tell the human "done, agent/hardening ready for review"

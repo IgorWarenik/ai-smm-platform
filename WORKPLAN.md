@@ -74,34 +74,35 @@
 
 ---
 
-## Этап 3 — Frontend (Next.js 14) ❌ НЕ НАЧАТ
+## Этап 3 — Frontend (Next.js 14) ⏳ В ПРОЦЕССЕ
 
-> `apps/frontend/` — инфраструктура развернута.
+> `apps/frontend/` не существует. Gemini строит с нуля на ветке `agent/frontend`.
 
 ### 3.1 Инфраструктура
-- [x] Next.js 14 + App Router setup в `apps/frontend/`
-- [x] Tailwind CSS + shadcn/ui
-- [x] API client (fetch wrapper с JWT)
-- [x] Auth context + useAuth hook
+- [ ] Next.js 14 + App Router setup в `apps/frontend/`
+- [ ] Tailwind CSS + shadcn/ui
+- [ ] API client (fetch wrapper с JWT + auto-refresh)
+- [ ] Auth context + useAuth hook
 
 ### 3.2 Auth pages
-- [x] `/login` — форма входа
-- [x] `/register` — форма регистрации
+- [ ] `/login` — форма входа
+- [ ] `/register` — форма регистрации
+- [ ] Route protection middleware
 
 ### 3.3 Dashboard
-- [x] `/dashboard` — список проектов
-- [x] `/projects/new` — создание проекта
+- [ ] `/dashboard` — список проектов
+- [ ] `/projects/new` — создание проекта
 
 ### 3.4 Project pages
-- [x] `/projects/[id]` — задачи проекта, SSE-стрим
-- [x] `/projects/[id]/profile` — просмотр / редактирование профиля
-- [x] `/projects/[id]/knowledge` — база знаний
+- [ ] `/projects/[id]` — задачи проекта, SSE-стрим
+- [ ] `/projects/[id]/profile` — просмотр / редактирование профиля
+- [ ] `/projects/[id]/knowledge` — база знаний
 
 ### 3.5 Task UI
-- [x] Форма создания задачи + отображение score
-- [x] Просмотр вывода агентов в реальном времени (SSE)
-- [x] Approval flow — кнопки approve / request revision
-- [x] Clarification flow — ответ на вопросы при score 25–39
+- [ ] Форма создания задачи + отображение score
+- [ ] Просмотр вывода агентов в реальном времени (SSE)
+- [ ] Approval flow — кнопки approve / request revision
+- [ ] Clarification flow — ответ на вопросы при score 25–39
 
 ---
 
@@ -115,23 +116,44 @@
 
 ---
 
-## Этап 5 — Hardening & Advanced Features ⏳ В ПРОЦЕССЕ
+## Этап 5 — Hardening & Advanced Features ✅ ЗАВЕРШЁН
 
 - [x] Переход на JWT RS256 (асимметричные ключи) — логика и генератор готовы
-- [ ] Реализация Manager Escalation (проверка Evaluator threshold)
+- [x] Реализация Manager Escalation — `APPROVAL_MAX_REVISIONS` + `managerEscalated` + `requiresReview` в approvals.ts
 - [x] Горизонтальное масштабирование SSE через Redis Pub/Sub
-- [ ] Интеграция `runAgentStreaming` в `packages/ai-engine`
+- [x] Интеграция `runAgentStreaming` в `packages/ai-engine` — экспортирована из claude.ts
+
+## Этап 5b — Backend Hardening ⏳ В ПРОЦЕССЕ (Wave 3)
+
+> Codex строит на ветке `agent/hardening`. Задачи из `AGENT_BRIEF_CODEX.md`.
+
+- [ ] `packages/shared/src/schemas.ts` — `CreateApprovalSchema` + MIN_REVISION_CHARS validation при REVISION_REQUESTED
+- [ ] `packages/shared/src/schemas.ts` — `TaskQuerySchema` с опциональным `status` фильтром
+- [ ] `apps/api/src/routes/tasks.ts` — GET /tasks поддерживает `?status=` фильтр
+- [ ] `apps/api/src/index.ts` — fail-fast валидация env vars при запуске
+- [ ] `apps/api/tests/feedback.test.ts` — 8 тестов для GET/POST feedback routes
 
 ---
 
-## Текущая задача
- Активная задача: Codex routes hardening (`agent/routes`): knowledge RLS/pagination + SSE shim cleanup.
- Статус: Завершено у Codex.
- Следующий шаг: Review/merge ветки `agent/routes`.
-- Файл контекста: `docs/CONTEXT.md` + `context/kits/cavekit-overview.md`.
-- Координация агентов: добавлены root `AGENTS.md`, root `CLAUDE.md`, `docs/AGENT_SYNC.md`; оба агента должны читать их перед работой и обновлять этот блок при handoff.
-- n8n risk: `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, а существующие workflow TS лежат в `apps/workflows/local_5678_igor_g/personal`; перед workflow-правками обязательно запускать `npx --yes n8nac list`.
-- Последняя проверка n8n (`2026-04-20`): `npx --yes n8nac list` показал 5 local-only workflow (`orchestrator`, `scenario-a/b/c/d`) и 2 remote-only (`My workflow`, `My workflow 2`); workflow source ещё не синхронизирован с remote.
-- Последняя handoff-запись: Codex исправил P1 findings: `.gitignore` больше не игнорирует nested `apps/api/src/lib/`, `apps/api/src/lib/sse.ts` добавлен в index, SSE stream проверяет membership и task ownership до открытия соединения, task execution валидирует `API_BASE_URL`/`N8N_WEBHOOK_URL`, ожидает n8n webhook response и переводит execution/task в FAILED при ошибке; тесты добавлены в `tests/integration/tasks.test.ts`; валидация: `npm run build --workspace=apps/api` pass, `npm run test:integration` 89 passed; следующий шаг: remaining P1/P2 review items.
-- Handoff `2026-04-20`: Codex на `agent/routes` исправил knowledge embedding UPDATE через `withProjectContext`, завернул raw search SQL в project context, добавил pagination для `GET /knowledge`, удалил deprecated `sseClients` shim; затронуты `apps/api/src/routes/knowledge.ts`, `apps/api/src/lib/sse.ts`; валидация: `npx tsc --noEmit -p apps/api/tsconfig.json` pass, `git diff --check` pass.
-- Открытые вопросы: нет.
+## Текущая задача (Wave 3 — 2026-04-21)
+
+**Статус:** Briefs выданы, агенты работают параллельно.
+
+| Агент | Ветка | Задача | Статус |
+|-------|-------|--------|--------|
+| Codex | `agent/hardening` | Backend hardening (schema + tests + env) | ⏳ в работе |
+| Gemini | `agent/frontend` | Полный Next.js 14 frontend | ⏳ в работе |
+
+**Следующий шаг для Claude:**
+1. Дождаться отчётов в `AGENTS_CHAT.md`
+2. Принять работу: review diff, запустить `npx vitest run` + `npm run build --workspace=apps/frontend`
+3. Если ок — merge обеих веток в main
+4. Выдать Wave 4 briefs (интеграционные тесты frontend, e2e, n8n sync)
+
+**Порядок merge:**
+- `agent/hardening` сначала (изменяет shared/schemas.ts, API)
+- `agent/frontend` после (зависит от API)
+
+**n8n риск:** `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, существующие workflow в `apps/workflows/local_5678_igor_g/personal`. Перед правками workflow запускать `npx --yes n8nac list`.
+
+**Открытые вопросы:** нет.
