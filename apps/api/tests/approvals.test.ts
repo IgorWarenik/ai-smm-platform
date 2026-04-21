@@ -190,7 +190,10 @@ describe('POST /api/projects/:projectId/tasks/:taskId/approvals', () => {
       method: 'POST',
       url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}/approvals`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { decision: 'REVISION_REQUESTED', comment: 'Please revise the tone' },
+      payload: {
+        decision: 'REVISION_REQUESTED',
+        comment: 'Please revise the tone, structure, and call to action with clearer guidance.',
+      },
     })
 
     expect(res.statusCode).toBe(201)
@@ -213,7 +216,10 @@ describe('POST /api/projects/:projectId/tasks/:taskId/approvals', () => {
       method: 'POST',
       url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}/approvals`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { decision: 'REVISION_REQUESTED', comment: 'Still not good' },
+      payload: {
+        decision: 'REVISION_REQUESTED',
+        comment: 'Still not good enough; revise the structure, tone, and final CTA with specifics.',
+      },
     })
 
     expect(res.statusCode).toBe(201)

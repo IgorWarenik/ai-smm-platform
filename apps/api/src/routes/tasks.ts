@@ -5,11 +5,11 @@ import {
   ExecuteTaskSchema,
   ExecutionStatus,
   OrchestratorWebhookPayload,
-  PaginationSchema,
   ScenarioType,
   TASK_SCORE_CLARIFICATION_MAX,
   TASK_SCORE_CLARIFICATION_MIN,
   TASK_SCORE_THRESHOLD,
+  TaskQuerySchema,
   TaskStatus,
   ToneOfVoice,
 } from '@ai-marketing/shared'
@@ -162,7 +162,7 @@ export async function taskRoutes(app: FastifyInstance) {
   app.get('/', async (request, reply) => {
     const { projectId } = request.params as { projectId: string }
     const userId = request.user.sub
-    const query = PaginationSchema.parse(request.query)
+    const query = TaskQuerySchema.parse(request.query)
 
     const membership = await prisma.projectMember.findUnique({
       where: { userId_projectId: { userId, projectId } },
@@ -170,14 +170,16 @@ export async function taskRoutes(app: FastifyInstance) {
     if (!membership) return reply.notFound('Project not found')
 
     return withProjectContext(projectId, userId, async (tx) => {
+      const whereClause = { projectId, ...(query.status && { status: query.status }) }
+
       const [tasks, total] = await tx.$transaction([
         tx.task.findMany({
-          where: { projectId },
+          where: whereClause,
           skip: (query.page - 1) * query.pageSize,
           take: query.pageSize,
           orderBy: { createdAt: 'desc' },
         }),
-        tx.task.count({ where: { projectId } }),
+        tx.task.count({ where: whereClause }),
       ])
       return reply.send({ data: tasks, total, page: query.page, pageSize: query.pageSize })
     })

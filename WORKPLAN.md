@@ -127,21 +127,21 @@
 
 > Codex строит на ветке `agent/hardening`. Задачи из `AGENT_BRIEF_CODEX.md`.
 
-- [ ] `packages/shared/src/schemas.ts` — `CreateApprovalSchema` + MIN_REVISION_CHARS validation при REVISION_REQUESTED
-- [ ] `packages/shared/src/schemas.ts` — `TaskQuerySchema` с опциональным `status` фильтром
-- [ ] `apps/api/src/routes/tasks.ts` — GET /tasks поддерживает `?status=` фильтр
-- [ ] `apps/api/src/index.ts` — fail-fast валидация env vars при запуске
-- [ ] `apps/api/tests/feedback.test.ts` — 8 тестов для GET/POST feedback routes
+- [x] `packages/shared/src/schemas.ts` — `CreateApprovalSchema` + MIN_REVISION_CHARS validation при REVISION_REQUESTED
+- [x] `packages/shared/src/schemas.ts` — `TaskQuerySchema` с опциональным `status` фильтром
+- [x] `apps/api/src/routes/tasks.ts` — GET /tasks поддерживает `?status=` фильтр
+- [x] `apps/api/src/index.ts` — fail-fast валидация env vars при запуске
+- [x] `apps/api/tests/feedback.test.ts` — 8 тестов для GET/POST feedback routes
 
 ---
 
 ## Текущая задача (Wave 3 — 2026-04-21)
 
-**Статус:** Briefs выданы, агенты работают параллельно.
+**Статус:** Codex Wave 3 backend hardening завершён; Gemini frontend ещё в работе.
 
 | Агент | Ветка | Задача | Статус |
 |-------|-------|--------|--------|
-| Codex | `agent/hardening` | Backend hardening (schema + tests + env) | ⏳ в работе |
+| Codex | `agent/hardening` | Backend hardening (schema + tests + env) | ✅ готово |
 | Gemini | `agent/frontend` | Полный Next.js 14 frontend | ⏳ в работе |
 
 **Следующий шаг для Claude:**
@@ -157,3 +157,5 @@
 **n8n риск:** `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, существующие workflow в `apps/workflows/local_5678_igor_g/personal`. Перед правками workflow запускать `npx --yes n8nac list`.
 
 **Открытые вопросы:** нет.
+
+**Codex handoff:** `CreateApprovalSchema` теперь требует revision comment >= 50 chars для `REVISION_REQUESTED`; добавлен `TaskQuerySchema.status`; `GET /tasks` фильтрует по status; API startup валидирует required env vars внутри `main()`; добавлен `apps/api/tests/feedback.test.ts` с 8 кейсами; существующие revision approval tests обновлены валидными >=50 chars comments. Валидация: `npx tsc --noEmit -p apps/api/tsconfig.json` pass, `npx tsc --noEmit -p packages/shared/tsconfig.json` pass, `npx vitest run` pass 103/103.
