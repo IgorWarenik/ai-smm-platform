@@ -1,5 +1,6 @@
 'use client'
 import ApprovalPanel from '@/components/ApprovalPanel'
+import Toast from '@/components/Toast'
 import { useTaskStream } from '@/hooks/useTaskStream'
 import { apiFetch } from '@/lib/api'
 import { useParams } from 'next/navigation'
@@ -29,6 +30,7 @@ export default function ProjectTasksPage() {
     const [creationError, setCreationError] = useState<any>(null)
     const [clarificationQuestions, setClarificationQuestions] = useState<string[]>([])
     const [clarificationTaskId, setClarificationTaskId] = useState<string | null>(null)
+    const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
     const selectedTask = tasks.find(t => t.id === selectedTaskId)
     const streamEnabled = selectedTask?.status === 'RUNNING'
@@ -60,9 +62,11 @@ export default function ProjectTasksPage() {
             } else {
                 setInput('')
                 fetchTasks()
+                setToast({ message: 'Task created', type: 'success' })
             }
         } catch (err: any) {
             setCreationError(err)
+            setToast({ message: err?.message ?? 'Failed to create task', type: 'error' })
         } finally {
             setSubmitting(false)
         }
@@ -73,7 +77,20 @@ export default function ProjectTasksPage() {
         fetchTasks()
     }
 
+    const handleDeleteTask = async (tid: string) => {
+        if (!confirm('Delete this task?')) return
+        try {
+            await apiFetch(`/api/projects/${projectId}/tasks/${tid}`, { method: 'DELETE' })
+            setSelectedTaskId(prev => prev === tid ? null : prev)
+            fetchTasks()
+            setToast({ message: 'Task deleted', type: 'success' })
+        } catch {
+            setToast({ message: 'Failed to delete task', type: 'error' })
+        }
+    }
+
     return (
+        <>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             <div className="md:col-span-1 space-y-6">
                 <div className="bg-white p-4 border rounded-lg shadow-sm">
@@ -134,19 +151,25 @@ export default function ProjectTasksPage() {
                         </div>
                     )}
                     {loading ? <p className="text-sm text-gray-400">Loading...</p> : tasks.map(t => (
-                        <button
-                            key={t.id}
-                            onClick={() => setSelectedTaskId(t.id)}
-                            className={`w-full text-left p-3 border rounded-lg text-sm transition-colors ${selectedTaskId === t.id ? 'border-blue-600 bg-blue-50' : 'bg-white hover:bg-gray-50'}`}
-                        >
-                            <div className="flex justify-between items-start mb-1">
-                                <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${getStatusColor(t.status)}`}>
-                                    {t.status}
-                                </span>
-                                <span className="text-[10px] text-gray-400">{new Date(t.createdAt).toLocaleDateString()}</span>
-                            </div>
-                            <p className="line-clamp-2 text-gray-700">{t.input}</p>
-                        </button>
+                        <div key={t.id} className="relative group">
+                            <button
+                                onClick={() => setSelectedTaskId(t.id)}
+                                className={`w-full text-left p-3 border rounded-lg text-sm transition-colors ${selectedTaskId === t.id ? 'border-blue-600 bg-blue-50' : 'bg-white hover:bg-gray-50'}`}
+                            >
+                                <div className="flex justify-between items-start mb-1">
+                                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${getStatusColor(t.status)}`}>
+                                        {t.status}
+                                    </span>
+                                    <span className="text-[10px] text-gray-400">{new Date(t.createdAt).toLocaleDateString()}</span>
+                                </div>
+                                <p className="line-clamp-2 text-gray-700">{t.input}</p>
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); handleDeleteTask(t.id) }}
+                                className="absolute top-2 right-2 hidden group-hover:flex items-center justify-center w-5 h-5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 text-xs"
+                                title="Delete task"
+                            >×</button>
+                        </div>
                     ))}
                 </div>
             </div>
@@ -228,6 +251,8 @@ export default function ProjectTasksPage() {
                 )}
             </div>
         </div>
+        {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
+        </>
     )
 }
 
