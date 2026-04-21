@@ -175,4 +175,40 @@ export async function projectRoutes(app: FastifyInstance) {
 
     return reply.code(201).send({ data: member })
   })
+
+  // DELETE /api/projects/:projectId/members/:memberId — remove member (OWNER only)
+  app.delete('/:projectId/members/:memberId', async (request, reply) => {
+    const { projectId, memberId } = request.params as { projectId: string; memberId: string }
+    if (!assertUuid(reply, projectId, 'projectId')) return
+    if (!assertUuid(reply, memberId, 'memberId')) return
+    const userId = request.user.sub
+
+    const callerMembership = await prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+    })
+    if (!callerMembership) return reply.notFound('Project not found')
+    if (callerMembership.role !== MemberRole.OWNER) {
+      return reply.forbidden('Only an OWNER can remove members')
+    }
+
+    // Cannot remove yourself if you are the last OWNER
+    if (memberId === userId) {
+      const ownerCount = await prisma.projectMember.count({
+        where: { projectId, role: MemberRole.OWNER },
+      })
+      if (ownerCount <= 1) {
+        return reply.badRequest('Cannot remove the last OWNER from the project')
+      }
+    }
+
+    const target = await prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId: memberId, projectId } },
+    })
+    if (!target) return reply.notFound('Member not found')
+
+    await prisma.projectMember.delete({
+      where: { userId_projectId: { userId: memberId, projectId } },
+    })
+    return reply.code(204).send()
+  })
 }

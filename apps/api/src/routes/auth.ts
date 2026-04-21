@@ -28,7 +28,9 @@ async function persistRefreshToken(userId: string, token: string) {
 
 export async function authRoutes(app: FastifyInstance) {
   // POST /api/auth/register
-  app.post('/register', async (request, reply) => {
+  app.post('/register', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const body = RegisterSchema.parse(request.body)
 
     const existing = await prisma.user.findUnique({
@@ -60,7 +62,9 @@ export async function authRoutes(app: FastifyInstance) {
   })
 
   // POST /api/auth/login
-  app.post('/login', async (request, reply) => {
+  app.post('/login', {
+    config: { rateLimit: { max: 20, timeWindow: '1 minute' } },
+  }, async (request, reply) => {
     const body = LoginSchema.parse(request.body)
 
     const user = await prisma.user.findUnique({

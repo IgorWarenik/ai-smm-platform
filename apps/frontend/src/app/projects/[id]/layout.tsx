@@ -17,6 +17,10 @@ export default function ProjectLayout({
                     className="text-sm font-medium hover:text-blue-600">Profile</Link>
                 <Link href={`/projects/${id}/knowledge`}
                     className="text-sm font-medium hover:text-blue-600">Knowledge</Link>
+                <Link href={`/projects/${id}/settings`}
+                    className="text-sm text-gray-600 hover:text-gray-900 px-3 py-1.5 rounded hover:bg-gray-100">
+                    Settings
+                </Link>
                 <Link href="/dashboard"
                     className="ml-auto text-sm text-gray-400 hover:text-gray-600">← Dashboard</Link>
             </nav>

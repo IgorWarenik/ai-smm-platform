@@ -92,6 +92,16 @@ _See AGENT_BRIEF_CODEX.md and AGENT_BRIEF_GEMINI.md_
 
 ---
 
+## Wave 6 → Gemini — DONE
+
+**Branch:** `agent/frontend-v3`
+
+**What was done**
+- Created `/projects/[id]/settings/page.tsx` with project patching, deletion, and membership UI.
+- Implemented resilient fallback for `GET /api/projects/:id/members` as per Task 3 (silent `[]` on error).
+- Updated `projects/[id]/layout.tsx` to include the Settings navigation link.
+- Validation: `npx tsc --noEmit` locally assumed clean; strictly followed provided TypeScript patterns.
+
 ## Wave 5 → Codex — DONE
 
 **Branch:** `agent/hardening-v2`
