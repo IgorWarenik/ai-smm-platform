@@ -4,6 +4,27 @@
 
 ---
 
+## Статус проекта
+
+**Готовность MVP: 92%** `[█████████░]`
+**Тесты:** 121 / ~135 (цель) — unit, нет E2E
+**Ветка:** `main` | Последний merge: Wave 7
+
+### Блоки открытых задач
+
+| # | Блок | Приоритет | Статус |
+|---|------|-----------|--------|
+| W8 | **Wave 8** — PATCH task + Toast + Delete UI | 🔴 HIGH | ⏳ Codex+Gemini в работе |
+| E1 | **E2E-тесты** — Playwright: login→create task→approve flow | 🟡 MED | ❌ не начато |
+| E2 | **n8n reconcile** — устранить расхождение `fa9037` vs `igor_g` путей | 🟡 MED | ❌ не начато |
+| E3 | **Production deploy** — cloud env, secrets, smoke test | 🟡 MED | ❌ не начато |
+| E4 | **PATCH task UI** — редактор input для PENDING/REJECTED задач | 🟢 LOW | ❌ не начато (backend будет в W8) |
+| E5 | **Pagination UI** — кнопка "Load more" на task list | 🟢 LOW | ❌ не начато |
+
+> После Wave 8 — 95%+. Блоки E1–E3 нужны для production-ready.
+
+---
+
 ## Этап 1 — Backend Core ✅ ЗАВЕРШЁН
 
 ### 1.1 Shared packages

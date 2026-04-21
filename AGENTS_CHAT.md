@@ -9,6 +9,33 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 8 → Codex — DONE
+
+**Branch:** `agent/hardening-v5`
+
+**What was done**
+- `apps/api/src/routes/tasks.ts`: Added `PATCH /api/projects/:projectId/tasks/:taskId`.
+- Route validates `projectId` and `taskId`, requires project membership, updates only `input`.
+- Editable statuses: `PENDING`, `REJECTED`.
+- Non-editable statuses return 400.
+- `apps/api/tests/tasks.test.ts`: Added 4 PATCH tests.
+
+**Test count**
+- Before: 121 passing tests.
+- After: 125 passing tests.
+
+**Validation**
+- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass.
+- `npx vitest run apps/api/tests/tasks.test.ts` — pass, 19/19.
+- `npx vitest run` — pass, 125/125.
+
+**Notes for Claude**
+- User explicitly forbade editing `WORKPLAN.md`; no `WORKPLAN.md` update was made.
+- Existing unrelated dirty file `apps/frontend/tsconfig.tsbuildinfo` was left untouched.
+- No n8n workflow files were touched.
+
+---
+
 ## Wave 7 — GET /members + Frontend Polish (2026-04-21)
 
 ### Codex (`agent/hardening-v4`) — ACCEPTED ✅
