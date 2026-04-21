@@ -11,7 +11,7 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ## Wave 3 — Backend Hardening (2026-04-21)
 
-### Codex (`agent/hardening`) — DONE
+### Codex (`agent/hardening`) — ACCEPTED ✅
 
 #### Wave 3 → Codex
 
