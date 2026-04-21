@@ -44,7 +44,15 @@ export default function DashboardPage() {
         </div>
       </div>
       {loading ? (
-        <p className="text-gray-500">Loading...</p>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="animate-pulse border rounded-lg p-4 bg-white">
+              <div className="h-5 bg-gray-200 rounded w-3/4 mb-2" />
+              <div className="h-3 bg-gray-100 rounded w-full" />
+              <div className="h-3 bg-gray-100 rounded w-2/3 mt-1" />
+            </div>
+          ))}
+        </div>
       ) : projects.length === 0 ? (
         <p className="text-gray-500">No projects yet. Create your first one.</p>
       ) : (
