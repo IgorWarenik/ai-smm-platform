@@ -76,33 +76,32 @@
 
 ## Этап 3 — Frontend (Next.js 14) ⏳ В ПРОЦЕССЕ
 
-> `apps/frontend/` не существует. Gemini строит с нуля на ветке `agent/frontend`.
+> Gemini пишет страницы на `agent/frontend`. Scaffold готов, 3 базовых файла есть.
 
 ### 3.1 Инфраструктура
-- [ ] Next.js 14 + App Router setup в `apps/frontend/`
-- [ ] Tailwind CSS + shadcn/ui
-- [ ] API client (fetch wrapper с JWT + auto-refresh)
-- [ ] Auth context + useAuth hook
+- [x] Next.js 14 + App Router setup в `apps/frontend/` (Claude)
+- [x] Tailwind CSS (Claude, без shadcn — Tailwind-only)
+- [x] API client `src/lib/api.ts` — apiFetch, auto-refresh, cookie (Gemini)
+- [x] Auth context `src/contexts/auth.tsx` + useAuth hook (Gemini)
+- [x] Route protection `src/middleware.ts` (Gemini)
 
 ### 3.2 Auth pages
 - [ ] `/login` — форма входа
 - [ ] `/register` — форма регистрации
-- [ ] Route protection middleware
 
 ### 3.3 Dashboard
 - [ ] `/dashboard` — список проектов
 - [ ] `/projects/new` — создание проекта
 
 ### 3.4 Project pages
-- [ ] `/projects/[id]` — задачи проекта, SSE-стрим
+- [ ] `/projects/[id]` layout + tasks page (creation, SSE, clarification, approval)
 - [ ] `/projects/[id]/profile` — просмотр / редактирование профиля
-- [ ] `/projects/[id]/knowledge` — база знаний
+- [ ] `/projects/[id]/knowledge` — база знаний + семантический поиск
 
-### 3.5 Task UI
-- [ ] Форма создания задачи + отображение score
-- [ ] Просмотр вывода агентов в реальном времени (SSE)
-- [ ] Approval flow — кнопки approve / request revision
-- [ ] Clarification flow — ответ на вопросы при score 25–39
+### 3.5 Task UI components
+- [ ] ApprovalPanel component
+- [ ] useTaskStream hook (SSE)
+- [ ] ClarificationForm (inline в tasks page)
 
 ---
 
@@ -123,9 +122,9 @@
 - [x] Горизонтальное масштабирование SSE через Redis Pub/Sub
 - [x] Интеграция `runAgentStreaming` в `packages/ai-engine` — экспортирована из claude.ts
 
-## Этап 5b — Backend Hardening ⏳ В ПРОЦЕССЕ (Wave 3)
+## Этап 5b — Backend Hardening ✅ ЗАВЕРШЁН (merged to main)
 
-> Codex строит на ветке `agent/hardening`. Задачи из `AGENT_BRIEF_CODEX.md`.
+> Codex ветка `agent/hardening` смержена. 103/103 тестов.
 
 - [x] `packages/shared/src/schemas.ts` — `CreateApprovalSchema` + MIN_REVISION_CHARS validation при REVISION_REQUESTED
 - [x] `packages/shared/src/schemas.ts` — `TaskQuerySchema` с опциональным `status` фильтром
@@ -135,20 +134,20 @@
 
 ---
 
-## Текущая задача (Wave 3 — 2026-04-21)
+## Текущая задача (Wave 3 продолжение — 2026-04-21)
 
-**Статус:** Codex Wave 3 backend hardening завершён; Gemini frontend ещё в работе.
+**Статус:** Codex ✅ смержен. Gemini пишет страницы на `agent/frontend`.
 
 | Агент | Ветка | Задача | Статус |
 |-------|-------|--------|--------|
-| Codex | `agent/hardening` | Backend hardening (schema + tests + env) | ✅ готово |
-| Gemini | `agent/frontend` | Полный Next.js 14 frontend | ⏳ в работе |
+| Codex | `agent/hardening` | Backend hardening | ✅ смержено в main |
+| Gemini | `agent/frontend` | Frontend pages (Tasks 1–10) | ⏳ в работе |
 
 **Следующий шаг для Claude:**
-1. Дождаться отчётов в `AGENTS_CHAT.md`
-2. Принять работу: review diff, запустить `npx vitest run` + `npm run build --workspace=apps/frontend`
-3. Если ок — merge обеих веток в main
-4. Выдать Wave 4 briefs (интеграционные тесты frontend, e2e, n8n sync)
+1. Дождаться отчёта Gemini в `AGENTS_CHAT.md`
+2. Проверить: `git diff main...agent/frontend --stat` + `npx tsc --noEmit -p apps/frontend/tsconfig.json`
+3. Если тип-чек чистый — merge `agent/frontend` в main
+4. Выдать Wave 4 briefs
 
 **Порядок merge:**
 - `agent/hardening` сначала (изменяет shared/schemas.ts, API)
