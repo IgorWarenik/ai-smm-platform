@@ -124,6 +124,15 @@ export default function ProjectTasksPage() {
                             </button>
                         ))}
                     </div>
+                    {!loading && tasks.length === 0 && (
+                        <div className="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
+                            <p className="text-sm font-medium">No tasks yet</p>
+                            {statusFilter === 'ALL'
+                                ? <p className="text-xs mt-1">Create your first task above</p>
+                                : <p className="text-xs mt-1">No tasks with status "{statusFilter.replace(/_/g, ' ')}"</p>
+                            }
+                        </div>
+                    )}
                     {loading ? <p className="text-sm text-gray-400">Loading...</p> : tasks.map(t => (
                         <button
                             key={t.id}

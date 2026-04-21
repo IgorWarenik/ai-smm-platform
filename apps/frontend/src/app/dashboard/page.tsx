@@ -1,11 +1,16 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
-import Link from 'next/link'
 import { useAuth } from '@/contexts/auth'
 import { apiFetch } from '@/lib/api'
+import Link from 'next/link'
+import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
 
-type Project = { id: string; name: string; description?: string }
+type Project = {
+  id: string
+  name: string
+  description?: string
+  _count?: { tasks: number }
+}
 
 export default function DashboardPage() {
   const { user, logout } = useAuth()
@@ -16,7 +21,7 @@ export default function DashboardPage() {
   useEffect(() => {
     apiFetch<{ data: Project[] }>('/api/projects')
       .then(({ data }) => setProjects(data))
-      .catch(() => {})
+      .catch(() => { })
       .finally(() => setLoading(false))
   }, [])
 
@@ -63,6 +68,9 @@ export default function DashboardPage() {
               <h2 className="font-semibold text-lg">{p.name}</h2>
               {p.description && (
                 <p className="text-sm text-gray-500 mt-1 line-clamp-2">{p.description}</p>
+              )}
+              {p._count !== undefined && (
+                <p className="text-xs text-gray-400 mt-2">{p._count.tasks} task{p._count.tasks !== 1 ? 's' : ''}</p>
               )}
             </Link>
           ))}

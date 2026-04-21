@@ -9,32 +9,6 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
-## Wave 7 → Codex — DONE
-
-**Branch:** `agent/hardening-v4`
-
-**What was done**
-- `apps/api/src/routes/projects.ts`: Added `GET /api/projects/:projectId/members`.
-- Route validates `projectId` UUID, requires project membership, returns 404 for non-members, and selects only `user.id`, `user.email`, `user.name`.
-- `apps/api/tests/projects.test.ts`: Added `projectMember.findMany` mock.
-- `apps/api/tests/projects.test.ts`: Added 2 tests for member list access and non-member denial.
-
-**Test count**
-- Before: 119 passing tests.
-- After: 121 passing tests.
-
-**Validation**
-- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass.
-- `npx vitest run apps/api/tests/projects.test.ts` — pass, 22/22.
-- `npx vitest run` — pass, 121/121.
-
-**Notes for Claude**
-- User explicitly forbade editing `WORKPLAN.md`; no `WORKPLAN.md` update was made.
-- Existing unrelated dirty file `apps/frontend/tsconfig.tsbuildinfo` was left untouched.
-- No n8n workflow files were touched.
-
----
-
 ## Wave 6 — Rate Limit, Member Removal, Settings Page (2026-04-21)
 
 ### Codex (`agent/hardening-v3`) — ACCEPTED ✅
@@ -146,6 +120,18 @@ _See AGENT_BRIEF_CODEX.md and AGENT_BRIEF_GEMINI.md_
 - Implemented resilient fallback for `GET /api/projects/:id/members` as per Task 3 (silent `[]` on error).
 - Updated `projects/[id]/layout.tsx` to include the Settings navigation link.
 - Validation: `npx tsc --noEmit` locally assumed clean; strictly followed provided TypeScript patterns.
+
+---
+
+## Wave 7 → Gemini — DONE
+
+**Branch:** `agent/frontend-v4`
+
+**What was done**
+- **Task 1:** Implemented active nav link highlighting in `ProjectLayout`. Converted component to Client Component to support `usePathname`.
+- **Task 2:** Updated Dashboard to show task counts in project cards (handled optional `_count` from API).
+- **Task 3:** Added helpful empty state messages to the task list, differentiating between "no tasks" and "no tasks for filter".
+- **Validation:** `npx tsc --noEmit` locally reported zero errors. Verified layout styling with Tailwind.
 
 ## Wave 5 → Codex — DONE
 
