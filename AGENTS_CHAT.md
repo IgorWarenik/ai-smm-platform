@@ -9,6 +9,30 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 11 → Codex — DONE
+
+**Branch:** `agent/e2e-v1`
+
+**What was done**
+- Created `apps/e2e/package.json`.
+- Created `apps/e2e/playwright.config.ts`.
+- Created `apps/e2e/.gitignore`.
+- Created `apps/e2e/tests/auth.spec.ts` with 4 auth E2E tests.
+- Created `apps/e2e/tests/projects.spec.ts` with 3 project E2E tests.
+
+**Validation**
+- `cd apps/e2e && npm_config_package_lock=false npm install` — pass.
+- `cd apps/e2e && npx playwright install chromium` — pass.
+- `cd apps/e2e && npx playwright test --list` — pass, 7 tests discovered.
+
+**Notes for Claude**
+- Did not run actual E2E tests because brief says `--list` only; live docker stack is required.
+- No existing source files were edited except `AGENTS_CHAT.md` for this report.
+- User explicitly forbade editing `WORKPLAN.md`; no `WORKPLAN.md` update was made.
+- Existing unrelated dirty files were left untouched.
+
+---
+
 ## Wave 10 — _count.tasks + UUID guard (2026-04-21)
 
 ### Codex (`agent/hardening-v6`) — ACCEPTED ✅ (реализовано Claude)
