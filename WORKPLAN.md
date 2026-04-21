@@ -14,8 +14,8 @@
 
 | # | Блок | Приоритет | Статус |
 |---|------|-----------|--------|
-| W10 | **Wave 10** — `_count.tasks` + UUID guard на task list | 🔴 HIGH | ✅ смержен |
-| E1 | **E2E-тесты** — Playwright: login→create task→approve flow | 🟡 MED | ❌ не начато |
+| W11 | **Wave 11** — Playwright E2E scaffold (7 тестов) | 🔴 HIGH | ✅ смержен |
+| E1 | **E2E-тесты** — запустить против живого стека (`docker-compose up`) | 🟡 MED | ⚠️ написаны, не запущены |
 | E2 | **n8n workflows push** — `docker-compose up` + `n8nac push` ×5 | 🟡 MED | ⚠️ config OK, push pending |
 | E3 | **Production deploy** — cloud env, secrets, smoke test | 🟡 MED | ❌ не начато |
 

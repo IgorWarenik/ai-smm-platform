@@ -9,6 +9,17 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 11 — Playwright E2E (2026-04-21)
+
+### Codex (`agent/e2e-v1`) — ACCEPTED ✅
+
+- `apps/e2e/package.json`, `playwright.config.ts`, `.gitignore` — scaffold
+- `apps/e2e/tests/auth.spec.ts` — 4 тестa: register, login, wrong creds, unauth redirect
+- `apps/e2e/tests/projects.spec.ts` — 3 теста: empty state, create project, task form visible
+- `npx playwright test --list` → 7/7 обнаружены, 0 ошибок
+
+---
+
 ## Wave 11 → Codex — DONE
 
 **Branch:** `agent/e2e-v1`
