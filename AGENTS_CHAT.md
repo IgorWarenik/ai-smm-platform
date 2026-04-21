@@ -9,6 +9,18 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 8 — PATCH task + Toast/Delete UI (2026-04-21)
+
+### Codex (`agent/hardening-v5`) — ACCEPTED ✅
+
+- `apps/api/src/routes/tasks.ts`: `PATCH /:taskId` (PENDING/REJECTED only, 400 for others)
+- `apps/api/tests/tasks.test.ts`: +4 tests (200×2, 400, 404)
+- 121 → 125 tests
+
+### Gemini (`agent/frontend-v5`) — ожидает отчёта
+
+---
+
 ## Wave 8 → Codex — DONE
 
 **Branch:** `agent/hardening-v5`
