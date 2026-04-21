@@ -21,6 +21,7 @@ vi.mock('@ai-marketing/db', () => ({
       create: vi.fn(),
       findMany: vi.fn().mockResolvedValue([]),
       findUnique: vi.fn(),
+      count: vi.fn().mockResolvedValue(0),
     },
     $executeRawUnsafe: vi.fn().mockResolvedValue(undefined),
     $queryRawUnsafe: vi.fn().mockResolvedValue([]),
