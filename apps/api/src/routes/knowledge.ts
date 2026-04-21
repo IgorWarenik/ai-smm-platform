@@ -1,11 +1,19 @@
 import type { FastifyInstance } from 'fastify'
-import { prisma, withProjectContext } from '@ai-marketing/db'
+import { prisma, type Prisma, withProjectContext } from '@ai-marketing/db'
 import {
   CreateKnowledgeItemSchema,
+  KnowledgeCategory,
   KnowledgeSearchSchema,
   PaginationSchema,
 } from '@ai-marketing/shared'
 import { applyRagBudget, buildRagPack, embedText, resolveRagBudget } from '@ai-marketing/ai-engine'
+import { z } from 'zod'
+
+const PatchKnowledgeItemSchema = z.object({
+  content: z.string().min(1).max(10000).optional(),
+  metadata: z.record(z.unknown()).optional(),
+  category: z.nativeEnum(KnowledgeCategory).optional(),
+})
 
 export async function knowledgeRoutes(app: FastifyInstance) {
   app.addHook('preHandler', app.authenticate)
@@ -147,6 +155,76 @@ export async function knowledgeRoutes(app: FastifyInstance) {
       const total = await tx.knowledgeItem.count({ where: { projectId } })
 
       return reply.send({ data: items, total, page: query.page, pageSize: query.pageSize })
+    })
+  })
+
+  // DELETE /api/projects/:projectId/knowledge/:itemId
+  app.delete('/:itemId', async (request, reply) => {
+    const { projectId, itemId } = request.params as { projectId: string; itemId: string }
+    const userId = request.user.sub
+
+    const membership = await prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+    })
+    if (!membership) return reply.notFound('Project not found')
+
+    return withProjectContext(projectId, userId, async (tx) => {
+      const item = await tx.knowledgeItem.findUnique({ where: { id: itemId } })
+      if (!item || item.projectId !== projectId) return reply.notFound('Knowledge item not found')
+
+      await tx.knowledgeItem.delete({ where: { id: itemId } })
+      return reply.code(204).send()
+    })
+  })
+
+  // PATCH /api/projects/:projectId/knowledge/:itemId
+  app.patch('/:itemId', async (request, reply) => {
+    const { projectId, itemId } = request.params as { projectId: string; itemId: string }
+    const userId = request.user.sub
+    const body = PatchKnowledgeItemSchema.parse(request.body)
+
+    if (Object.keys(body).length === 0) {
+      return reply.badRequest('At least one field required')
+    }
+
+    const membership = await prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+    })
+    if (!membership) return reply.notFound('Project not found')
+
+    return withProjectContext(projectId, userId, async (tx) => {
+      const item = await tx.knowledgeItem.findUnique({ where: { id: itemId } })
+      if (!item || item.projectId !== projectId) return reply.notFound('Knowledge item not found')
+
+      const updated = await tx.knowledgeItem.update({
+        where: { id: itemId },
+        data: {
+          ...(body.content !== undefined && { content: body.content }),
+          ...(body.metadata !== undefined && { metadata: body.metadata as Prisma.InputJsonValue }),
+          ...(body.category !== undefined && { category: body.category }),
+        },
+      })
+
+      if (body.content !== undefined) {
+        const serviceUserId =
+          process.env.INTERNAL_SERVICE_USER_ID ?? '00000000-0000-0000-0000-000000000000'
+        embedText(body.content)
+          .then(async (vector) => {
+            await withProjectContext(projectId, serviceUserId, async (ctx) => {
+              await ctx.$executeRawUnsafe(
+                `UPDATE knowledge_items SET embedding = $1::vector WHERE id = $2 AND project_id = $3::uuid`,
+                `[${vector.join(',')}]`,
+                itemId,
+                projectId
+              )
+            })
+          })
+          .catch((err) => {
+            console.error({ err, itemId }, 'Failed to re-embed updated knowledge item')
+          })
+      }
+
+      return reply.send({ data: updated })
     })
   })
 }
