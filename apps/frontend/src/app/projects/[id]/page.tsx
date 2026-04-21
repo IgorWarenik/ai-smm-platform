@@ -33,38 +33,19 @@ export default function ProjectTasksPage() {
     const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
     const [editingInput, setEditingInput] = useState(false)
     const [editInputValue, setEditInputValue] = useState('')
-    const [page, setPage] = useState(1)
-    const [hasMore, setHasMore] = useState(false)
 
     const selectedTask = tasks.find(t => t.id === selectedTaskId)
     const streamEnabled = selectedTask?.status === 'RUNNING'
     const streamEvents = useTaskStream(projectId, selectedTaskId || '', streamEnabled)
 
-    const fetchTasks = (resetPage = true) => {
-        const currentPage = resetPage ? 1 : page
-        if (resetPage) setPage(1)
+    const fetchTasks = () => {
         const qs = statusFilter !== 'ALL' ? `&status=${statusFilter}` : ''
-        apiFetch<{ data: Task[]; total: number }>(`/api/projects/${projectId}/tasks?page=${currentPage}&pageSize=20${qs}`)
-            .then(({ data, total }) => {
-                setTasks(prev => resetPage ? data : [...prev, ...data])
-                setHasMore((resetPage ? data.length : tasks.length + data.length) < total)
-            })
+        apiFetch<{ data: Task[] }>(`/api/projects/${projectId}/tasks?pageSize=20${qs}`)
+            .then(({ data }) => setTasks(data))
             .finally(() => setLoading(false))
     }
 
-    const loadMore = () => {
-        const nextPage = page + 1
-        setPage(nextPage)
-        const qs = statusFilter !== 'ALL' ? `&status=${statusFilter}` : ''
-        apiFetch<{ data: Task[]; total: number }>(`/api/projects/${projectId}/tasks?page=${nextPage}&pageSize=20${qs}`)
-            .then(({ data, total }) => {
-                setTasks(prev => [...prev, ...data])
-                setHasMore(tasks.length + data.length < total)
-            })
-    }
-
     useEffect(() => { fetchTasks() }, [projectId, statusFilter])
-    useEffect(() => { setEditingInput(false) }, [selectedTaskId])
 
     const handleCreateTask = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -98,18 +79,6 @@ export default function ProjectTasksPage() {
         fetchTasks()
     }
 
-    const handleDeleteTask = async (tid: string) => {
-        if (!confirm('Delete this task?')) return
-        try {
-            await apiFetch(`/api/projects/${projectId}/tasks/${tid}`, { method: 'DELETE' })
-            setSelectedTaskId(prev => prev === tid ? null : prev)
-            fetchTasks()
-            setToast({ message: 'Task deleted', type: 'success' })
-        } catch {
-            setToast({ message: 'Failed to delete task', type: 'error' })
-        }
-    }
-
     const handleSaveInput = async () => {
         if (!selectedTask) return
         try {
@@ -125,205 +94,211 @@ export default function ProjectTasksPage() {
         }
     }
 
+    const handleDeleteTask = async (tid: string) => {
+        if (!confirm('Delete this task?')) return
+        try {
+            await apiFetch(`/api/projects/${projectId}/tasks/${tid}`, { method: 'DELETE' })
+            setSelectedTaskId(prev => prev === tid ? null : prev)
+            fetchTasks()
+            setToast({ message: 'Task deleted', type: 'success' })
+        } catch {
+            setToast({ message: 'Failed to delete task', type: 'error' })
+        }
+    }
+
     return (
         <>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <div className="md:col-span-1 space-y-6">
-                <div className="bg-white p-4 border rounded-lg shadow-sm">
-                    <h2 className="font-semibold mb-3">New Task</h2>
-                    <form onSubmit={handleCreateTask} className="space-y-3">
-                        <textarea
-                            value={input}
-                            onChange={e => setInput(e.target.value)}
-                            placeholder="Describe your task..."
-                            className="w-full border rounded p-2 text-sm min-h-[100px]"
-                            required
-                        />
-                        {creationError && (
-                            <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
-                                {creationError.message}
-                                {creationError.details && <p>Score: {creationError.details.score}</p>}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                <div className="md:col-span-1 space-y-6">
+                    <div className="bg-white p-4 border rounded-lg shadow-sm">
+                        <h2 className="font-semibold mb-3">New Task</h2>
+                        <form onSubmit={handleCreateTask} className="space-y-3">
+                            <textarea
+                                value={input}
+                                onChange={e => setInput(e.target.value)}
+                                placeholder="Describe your task..."
+                                className="w-full border rounded p-2 text-sm min-h-[100px]"
+                                required
+                            />
+                            {creationError && (
+                                <div className="text-xs text-red-600 bg-red-50 p-2 rounded">
+                                    {creationError.message}
+                                    {creationError.details && <p>Score: {creationError.details.score}</p>}
+                                </div>
+                            )}
+                            <button type="submit" disabled={submitting}
+                                className="w-full bg-blue-600 text-white py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
+                                {submitting ? 'Creating...' : 'Create Task'}
+                            </button>
+                        </form>
+
+                        {clarificationQuestions.length > 0 && clarificationTaskId && (
+                            <div className="mt-4">
+                                <ClarificationForm
+                                    questions={clarificationQuestions}
+                                    taskId={clarificationTaskId}
+                                    projectId={projectId}
+                                    onDone={() => {
+                                        setClarificationQuestions([])
+                                        setInput('')
+                                        fetchTasks()
+                                    }}
+                                />
                             </div>
                         )}
-                        <button type="submit" disabled={submitting}
-                            className="w-full bg-blue-600 text-white py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                            {submitting ? 'Creating...' : 'Create Task'}
-                        </button>
-                    </form>
+                    </div>
 
-                    {clarificationQuestions.length > 0 && clarificationTaskId && (
-                        <div className="mt-4">
-                            <ClarificationForm
-                                questions={clarificationQuestions}
-                                taskId={clarificationTaskId}
-                                projectId={projectId}
-                                onDone={() => {
-                                    setClarificationQuestions([])
-                                    setInput('')
-                                    fetchTasks()
-                                }}
-                            />
+                    <div className="space-y-2">
+                        <h2 className="font-semibold">Recent Tasks</h2>
+                        <div className="flex flex-wrap gap-1">
+                            {['ALL', 'PENDING', 'IN_PROGRESS', 'AWAITING_APPROVAL', 'APPROVED', 'REVISION_REQUESTED', 'COMPLETED', 'FAILED'].map(s => (
+                                <button key={s} onClick={() => setStatusFilter(s)}
+                                    className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${statusFilter === s ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-gray-50 border-gray-200'}`}>
+                                    {s === 'ALL' ? 'All' : s.replace(/_/g, ' ')}
+                                </button>
+                            ))}
                         </div>
-                    )}
-                </div>
-
-                <div className="space-y-2">
-                    <h2 className="font-semibold">Recent Tasks</h2>
-                    <div className="flex flex-wrap gap-1">
-                        {['ALL','PENDING','IN_PROGRESS','AWAITING_APPROVAL','APPROVED','REVISION_REQUESTED','COMPLETED','FAILED'].map(s => (
-                            <button key={s} onClick={() => setStatusFilter(s)}
-                                className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${statusFilter === s ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-gray-50 border-gray-200'}`}>
-                                {s === 'ALL' ? 'All' : s.replace(/_/g, ' ')}
-                            </button>
+                        {!loading && tasks.length === 0 && (
+                            <div className="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
+                                <p className="text-sm font-medium">No tasks yet</p>
+                                {statusFilter === 'ALL'
+                                    ? <p className="text-xs mt-1">Create your first task above</p>
+                                    : <p className="text-xs mt-1">No tasks with status "{statusFilter.replace(/_/g, ' ')}"</p>
+                                }
+                            </div>
+                        )}
+                        {loading ? <p className="text-sm text-gray-400">Loading...</p> : tasks.map(t => (
+                            <div key={t.id} className="relative group">
+                                <button
+                                    onClick={() => setSelectedTaskId(t.id)}
+                                    className={`w-full text-left p-3 border rounded-lg text-sm transition-colors ${selectedTaskId === t.id ? 'border-blue-600 bg-blue-50' : 'bg-white hover:bg-gray-50'}`}
+                                >
+                                    <div className="flex justify-between items-start mb-1">
+                                        <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${getStatusColor(t.status)}`}>
+                                            {t.status}
+                                        </span>
+                                        <span className="text-[10px] text-gray-400">{new Date(t.createdAt).toLocaleDateString()}</span>
+                                    </div>
+                                    <p className="line-clamp-2 text-gray-700">{t.input}</p>
+                                </button>
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleDeleteTask(t.id) }}
+                                    className="absolute top-2 right-2 hidden group-hover:flex items-center justify-center w-5 h-5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 text-xs"
+                                    title="Delete task"
+                                >×</button>
+                            </div>
                         ))}
                     </div>
-                    {!loading && tasks.length === 0 && (
-                        <div className="text-center py-8 text-gray-400 border-2 border-dashed rounded-lg">
-                            <p className="text-sm font-medium">No tasks yet</p>
-                            {statusFilter === 'ALL'
-                                ? <p className="text-xs mt-1">Create your first task above</p>
-                                : <p className="text-xs mt-1">No tasks with status "{statusFilter.replace(/_/g, ' ')}"</p>
-                            }
-                        </div>
-                    )}
-                    {loading ? <p className="text-sm text-gray-400">Loading...</p> : tasks.map(t => (
-                        <div key={t.id} className="relative group">
-                            <button
-                                onClick={() => setSelectedTaskId(t.id)}
-                                className={`w-full text-left p-3 border rounded-lg text-sm transition-colors ${selectedTaskId === t.id ? 'border-blue-600 bg-blue-50' : 'bg-white hover:bg-gray-50'}`}
-                            >
-                                <div className="flex justify-between items-start mb-1">
-                                    <span className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold uppercase ${getStatusColor(t.status)}`}>
-                                        {t.status}
-                                    </span>
-                                    <span className="text-[10px] text-gray-400">{new Date(t.createdAt).toLocaleDateString()}</span>
-                                </div>
-                                <p className="line-clamp-2 text-gray-700">{t.input}</p>
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleDeleteTask(t.id) }}
-                                className="absolute top-2 right-2 hidden group-hover:flex items-center justify-center w-5 h-5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 text-xs"
-                                title="Delete task"
-                            >×</button>
-                        </div>
-                    ))}
-                    {hasMore && (
-                        <button onClick={loadMore}
-                            className="w-full text-xs text-gray-500 border rounded py-2 hover:bg-gray-50 mt-2">
-                            Load more
-                        </button>
-                    )}
                 </div>
-            </div>
 
-            <div className="md:col-span-2">
-                {selectedTask ? (
-                    <div className="bg-white border rounded-lg shadow-sm p-6 space-y-6">
-                        <div className="flex justify-between items-start">
-                            <h1 className="text-xl font-bold">Task Detail</h1>
-                            <div className="text-right">
-                                <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Quality Score</p>
-                                <p className="text-2xl font-black text-blue-600">{selectedTask.score ?? 'N/A'}</p>
+                <div className="md:col-span-2">
+                    {selectedTask ? (
+                        <div className="bg-white border rounded-lg shadow-sm p-6 space-y-6">
+                            <div className="flex justify-between items-start">
+                                <h1 className="text-xl font-bold">Task Detail</h1>
+                                <div className="text-right">
+                                    <p className="text-xs text-gray-500 uppercase font-bold tracking-wider">Quality Score</p>
+                                    <p className="text-2xl font-black text-blue-600">{selectedTask.score ?? 'N/A'}</p>
+                                </div>
                             </div>
-                        </div>
 
-                        {editingInput ? (
-                            <div className="space-y-2">
-                                <textarea
-                                    value={editInputValue}
-                                    onChange={e => setEditInputValue(e.target.value)}
-                                    className="w-full border rounded p-3 text-sm min-h-[120px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            {editingInput ? (
+                                <div className="space-y-2">
+                                    <textarea
+                                        value={editInputValue}
+                                        onChange={e => setEditInputValue(e.target.value)}
+                                        className="w-full border rounded p-3 text-sm min-h-[120px] focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                    />
+                                    <div className="flex gap-2">
+                                        <button onClick={handleSaveInput}
+                                            className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700">
+                                            Save
+                                        </button>
+                                        <button onClick={() => setEditingInput(false)}
+                                            className="px-4 py-1.5 rounded text-sm border hover:bg-gray-50">
+                                            Cancel
+                                        </button>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div className="relative group/input">
+                                    <div className="bg-gray-50 p-4 rounded text-sm whitespace-pre-wrap text-gray-800 border">
+                                        {selectedTask.input}
+                                    </div>
+                                    {(selectedTask.status === 'PENDING' || selectedTask.status === 'REJECTED') && (
+                                        <button
+                                            onClick={() => { setEditInputValue(selectedTask.input); setEditingInput(true) }}
+                                            className="absolute top-2 right-2 hidden group-hover/input:block text-xs text-gray-400 hover:text-blue-600 bg-white border rounded px-2 py-0.5"
+                                        >
+                                            Edit
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {selectedTask.status === 'AWAITING_CLARIFICATION' && (
+                                <ClarificationForm
+                                    questions={selectedTask.clarificationNote?.split('\n') ?? []}
+                                    taskId={selectedTask.id}
+                                    projectId={projectId}
+                                    onDone={fetchTasks}
                                 />
-                                <div className="flex gap-2">
-                                    <button onClick={handleSaveInput}
-                                        className="bg-blue-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-blue-700">
-                                        Save
-                                    </button>
-                                    <button onClick={() => setEditingInput(false)}
-                                        className="px-4 py-1.5 rounded text-sm border hover:bg-gray-50">
-                                        Cancel
-                                    </button>
+                            )}
+
+                            {selectedTask.status === 'PENDING' && (
+                                <button onClick={() => handleExecute(selectedTask.id)}
+                                    className="bg-green-600 text-white px-6 py-2 rounded font-semibold hover:bg-green-700">
+                                    Execute Workflow (Scenario {selectedTask.scenario})
+                                </button>
+                            )}
+
+                            {selectedTask.status === 'RUNNING' && (
+                                <div className="space-y-4">
+                                    <h3 className="font-semibold flex items-center gap-2">
+                                        <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
+                                        Live Agent Output
+                                    </h3>
+                                    <div className="space-y-3">
+                                        {streamEvents.map((ev, i) => (
+                                            <div key={i} className="text-sm border-l-2 border-blue-200 pl-4 py-1">
+                                                {ev.agentType && <span className="font-bold text-xs text-blue-600 block uppercase">{ev.agentType}</span>}
+                                                <p className="text-gray-700">{ev.content}</p>
+                                                {ev.error && <p className="text-red-600">{ev.error}</p>}
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
-                            </div>
-                        ) : (
-                            <div className="relative group/input">
-                                <div className="bg-gray-50 p-4 rounded text-sm whitespace-pre-wrap text-gray-800 border">
-                                    {selectedTask.input}
-                                </div>
-                                {(selectedTask.status === 'PENDING' || selectedTask.status === 'REJECTED') && (
-                                    <button
-                                        onClick={() => { setEditInputValue(selectedTask.input); setEditingInput(true) }}
-                                        className="absolute top-2 right-2 hidden group-hover/input:block text-xs text-gray-400 hover:text-blue-600 bg-white border rounded px-2 py-0.5"
-                                    >
-                                        Edit
-                                    </button>
-                                )}
-                            </div>
-                        )}
+                            )}
 
-                        {selectedTask.status === 'AWAITING_CLARIFICATION' && (
-                            <ClarificationForm
-                                questions={selectedTask.clarificationNote?.split('\n') ?? []}
-                                taskId={selectedTask.id}
-                                projectId={projectId}
-                                onDone={fetchTasks}
-                            />
-                        )}
+                            {selectedTask.status === 'AWAITING_APPROVAL' && (
+                                <ApprovalPanel
+                                    projectId={projectId}
+                                    taskId={selectedTask.id}
+                                    agentOutputs={selectedTask.executions?.[0]?.agentOutputs?.map((o: any) => ({ agentType: o.agentType, content: o.output }))}
+                                    onDecision={() => fetchTasks()}
+                                />
+                            )}
 
-                        {selectedTask.status === 'PENDING' && (
-                            <button onClick={() => handleExecute(selectedTask.id)}
-                                className="bg-green-600 text-white px-6 py-2 rounded font-semibold hover:bg-green-700">
-                                Execute Workflow (Scenario {selectedTask.scenario})
-                            </button>
-                        )}
-
-                        {selectedTask.status === 'RUNNING' && (
-                            <div className="space-y-4">
-                                <h3 className="font-semibold flex items-center gap-2">
-                                    <span className="w-2 h-2 bg-blue-500 rounded-full animate-pulse"></span>
-                                    Live Agent Output
-                                </h3>
-                                <div className="space-y-3">
-                                    {streamEvents.map((ev, i) => (
-                                        <div key={i} className="text-sm border-l-2 border-blue-200 pl-4 py-1">
-                                            {ev.agentType && <span className="font-bold text-xs text-blue-600 block uppercase">{ev.agentType}</span>}
-                                            <p className="text-gray-700">{ev.content}</p>
-                                            {ev.error && <p className="text-red-600">{ev.error}</p>}
+                            {selectedTask.status === 'COMPLETED' && selectedTask.executions?.[0]?.agentOutputs && (
+                                <div className="space-y-4">
+                                    <h3 className="font-semibold text-green-700">Final Results</h3>
+                                    {selectedTask.executions[0].agentOutputs.map((o: any, i: number) => (
+                                        <div key={i} className="border rounded p-4">
+                                            <p className="text-xs font-bold text-gray-400 uppercase mb-2">{o.agentType}</p>
+                                            <div className="text-sm prose max-w-none whitespace-pre-wrap">{o.output}</div>
                                         </div>
                                     ))}
                                 </div>
-                            </div>
-                        )}
-
-                        {selectedTask.status === 'AWAITING_APPROVAL' && (
-                            <ApprovalPanel
-                                projectId={projectId}
-                                taskId={selectedTask.id}
-                                agentOutputs={selectedTask.executions?.[0]?.agentOutputs?.map((o: any) => ({ agentType: o.agentType, content: o.output }))}
-                                onDecision={() => fetchTasks()}
-                            />
-                        )}
-
-                        {selectedTask.status === 'COMPLETED' && selectedTask.executions?.[0]?.agentOutputs && (
-                            <div className="space-y-4">
-                                <h3 className="font-semibold text-green-700">Final Results</h3>
-                                {selectedTask.executions[0].agentOutputs.map((o: any, i: number) => (
-                                    <div key={i} className="border rounded p-4">
-                                        <p className="text-xs font-bold text-gray-400 uppercase mb-2">{o.agentType}</p>
-                                        <div className="text-sm prose max-w-none whitespace-pre-wrap">{o.output}</div>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                    </div>
-                ) : (
-                    <div className="h-64 flex items-center justify-center border-2 border-dashed rounded-lg text-gray-400">
-                        Select a task to view details
-                    </div>
-                )}
+                            )}
+                        </div>
+                    ) : (
+                        <div className="h-64 flex items-center justify-center border-2 border-dashed rounded-lg text-gray-400">
+                            Select a task to view details
+                        </div>
+                    )}
+                </div>
             </div>
-        </div>
-        {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
+            {toast && <Toast message={toast.message} type={toast.type} onDismiss={() => setToast(null)} />}
         </>
     )
 }
