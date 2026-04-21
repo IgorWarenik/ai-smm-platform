@@ -20,7 +20,9 @@ vi.mock('@ai-marketing/db', () => ({
     task: {
       create: vi.fn(),
       findFirst: vi.fn(),
+      findUnique: vi.fn(),
       update: vi.fn(),
+      delete: vi.fn(),
       findMany: vi.fn().mockResolvedValue([]),
       count: vi.fn().mockResolvedValue(0),
     },
@@ -53,8 +55,8 @@ const mockBcrypt = bcrypt as any
 const mockScoreTask = scoreTask as any
 const mockWPC = withProjectContext as any
 
-const PROJECT_ID = 'proj-00000000-0000-0000-0000-000000000001'
-const TASK_ID = 'task-0000-0000-0000-0000-000000000001'
+const PROJECT_ID = 'a0000000-0000-0000-0000-000000000001'
+const TASK_ID = 'b0000000-0000-0000-0000-000000000002'
 const USER_ID = 'user-0000-0000-0000-0000-000000000001'
 
 async function getToken(app: FastifyInstance): Promise<string> {
@@ -338,5 +340,116 @@ describe('GET /api/projects/:projectId/tasks', () => {
     })
 
     expect(res.statusCode).toBe(404)
+  })
+
+  it('200 — filters tasks by status', async () => {
+    const token = await getToken(app)
+
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findMany.mockResolvedValue([{ id: TASK_ID, status: 'AWAITING_APPROVAL' }])
+    db.task.count.mockResolvedValue(1)
+
+    const res = await app.inject({
+      method: 'GET',
+      url: `/api/projects/${PROJECT_ID}/tasks?status=AWAITING_APPROVAL`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(200)
+    expect(db.task.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { projectId: PROJECT_ID, status: 'AWAITING_APPROVAL' },
+      })
+    )
+    expect(db.task.count).toHaveBeenCalledWith({
+      where: { projectId: PROJECT_ID, status: 'AWAITING_APPROVAL' },
+    })
+  })
+})
+
+// ─── DELETE /api/projects/:projectId/tasks/:taskId ───────────────────────────
+
+describe('DELETE /api/projects/:projectId/tasks/:taskId', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('204 — member deletes own task', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID })
+    db.task.delete.mockResolvedValue({})
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(204)
+  })
+
+  it('404 — non-member cannot delete', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('404 — task not found', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(404)
+  })
+})
+
+// ─── UUID validation ─────────────────────────────────────────────────────────
+
+describe('UUID validation', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    app = await buildApp()
+  })
+
+  afterEach(async () => {
+    await app.close()
+  })
+
+  it('400 — invalid projectId returns bad request', async () => {
+    const token = await getToken(app)
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/projects/not-a-uuid',
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(400)
   })
 })

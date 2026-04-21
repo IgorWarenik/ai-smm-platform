@@ -11,6 +11,7 @@ type Task = {
     status: string
     score?: number
     scenario?: string
+    clarificationNote?: string
     createdAt: string
     executions?: any[]
 }
@@ -20,6 +21,7 @@ export default function ProjectTasksPage() {
     const [tasks, setTasks] = useState<Task[]>([])
     const [loading, setLoading] = useState(true)
     const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+    const [statusFilter, setStatusFilter] = useState<string>('ALL')
 
     // Creation form state
     const [input, setInput] = useState('')
@@ -33,12 +35,13 @@ export default function ProjectTasksPage() {
     const streamEvents = useTaskStream(projectId, selectedTaskId || '', streamEnabled)
 
     const fetchTasks = () => {
-        apiFetch<{ data: Task[] }>(`/api/projects/${projectId}/tasks?pageSize=20`)
+        const qs = statusFilter !== 'ALL' ? `&status=${statusFilter}` : ''
+        apiFetch<{ data: Task[] }>(`/api/projects/${projectId}/tasks?pageSize=20${qs}`)
             .then(({ data }) => setTasks(data))
             .finally(() => setLoading(false))
     }
 
-    useEffect(() => { fetchTasks() }, [projectId])
+    useEffect(() => { fetchTasks() }, [projectId, statusFilter])
 
     const handleCreateTask = async (e: React.FormEvent) => {
         e.preventDefault()
@@ -51,7 +54,7 @@ export default function ProjectTasksPage() {
                 method: 'POST',
                 body: JSON.stringify({ input })
             })
-            if (res.status === 202) {
+            if (res.clarificationQuestions) {
                 setClarificationQuestions(res.clarificationQuestions)
                 setClarificationTaskId(res.data.id)
             } else {
@@ -91,13 +94,36 @@ export default function ProjectTasksPage() {
                         )}
                         <button type="submit" disabled={submitting}
                             className="w-full bg-blue-600 text-white py-1.5 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-                            Create Task
+                            {submitting ? 'Creating...' : 'Create Task'}
                         </button>
                     </form>
+
+                    {clarificationQuestions.length > 0 && clarificationTaskId && (
+                        <div className="mt-4">
+                            <ClarificationForm
+                                questions={clarificationQuestions}
+                                taskId={clarificationTaskId}
+                                projectId={projectId}
+                                onDone={() => {
+                                    setClarificationQuestions([])
+                                    setInput('')
+                                    fetchTasks()
+                                }}
+                            />
+                        </div>
+                    )}
                 </div>
 
                 <div className="space-y-2">
                     <h2 className="font-semibold">Recent Tasks</h2>
+                    <div className="flex flex-wrap gap-1">
+                        {['ALL','PENDING','IN_PROGRESS','AWAITING_APPROVAL','APPROVED','REVISION_REQUESTED','COMPLETED','FAILED'].map(s => (
+                            <button key={s} onClick={() => setStatusFilter(s)}
+                                className={`text-[10px] px-2 py-0.5 rounded border transition-colors ${statusFilter === s ? 'bg-blue-600 text-white border-blue-600' : 'hover:bg-gray-50 border-gray-200'}`}>
+                                {s === 'ALL' ? 'All' : s.replace(/_/g, ' ')}
+                            </button>
+                        ))}
+                    </div>
                     {loading ? <p className="text-sm text-gray-400">Loading...</p> : tasks.map(t => (
                         <button
                             key={t.id}
@@ -130,6 +156,15 @@ export default function ProjectTasksPage() {
                         <div className="bg-gray-50 p-4 rounded text-sm whitespace-pre-wrap text-gray-800 border">
                             {selectedTask.input}
                         </div>
+
+                        {selectedTask.status === 'AWAITING_CLARIFICATION' && (
+                            <ClarificationForm
+                                questions={selectedTask.clarificationNote?.split('\n') ?? []}
+                                taskId={selectedTask.id}
+                                projectId={projectId}
+                                onDone={fetchTasks}
+                            />
+                        )}
 
                         {selectedTask.status === 'PENDING' && (
                             <button onClick={() => handleExecute(selectedTask.id)}
@@ -184,6 +219,38 @@ export default function ProjectTasksPage() {
                 )}
             </div>
         </div>
+    )
+}
+
+function ClarificationForm({ questions, taskId, projectId, onDone }: { questions: string[], taskId: string, projectId: string, onDone: (t?: any) => void }) {
+    const [answer, setAnswer] = useState('')
+    const [loading, setLoading] = useState(false)
+    const submit = async (e: React.FormEvent) => {
+        e.preventDefault()
+        setLoading(true)
+        try {
+            const res = await apiFetch<any>(`/api/projects/${projectId}/tasks/${taskId}/clarify`, {
+                method: 'POST',
+                body: JSON.stringify({ answer })
+            })
+            onDone(res.data)
+        } finally {
+            setLoading(false)
+        }
+    }
+    return (
+        <form onSubmit={submit} className="bg-orange-50 border border-orange-200 p-4 rounded-lg space-y-3">
+            <p className="text-sm font-semibold text-orange-800">The AI needs more information:</p>
+            <ul className="list-disc list-inside text-sm text-orange-700 space-y-1">
+                {questions.map((q, i) => <li key={i}>{q}</li>)}
+            </ul>
+            <textarea value={answer} onChange={e => setAnswer(e.target.value)} required placeholder="Provide clarification here..."
+                className="w-full border border-orange-300 rounded p-2 text-sm focus:outline-none focus:ring-2 focus:ring-orange-500" rows={4} />
+            <button type="submit" disabled={loading}
+                className="bg-orange-600 text-white px-4 py-1.5 rounded text-sm font-medium hover:bg-orange-700 disabled:opacity-50">
+                {loading ? 'Submitting...' : 'Submit Clarification'}
+            </button>
+        </form>
     )
 }
 

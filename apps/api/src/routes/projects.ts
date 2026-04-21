@@ -1,4 +1,4 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import { prisma, withProjectContext } from '@ai-marketing/db'
 import {
   CreateProjectSchema,
@@ -7,6 +7,16 @@ import {
   PaginationSchema,
 } from '@ai-marketing/shared'
 import { MemberRole } from '@ai-marketing/shared'
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+function assertUuid(reply: FastifyReply, value: string, label: string): boolean {
+  if (!UUID_RE.test(value)) {
+    reply.badRequest(`${label} must be a valid UUID`)
+    return false
+  }
+  return true
+}
 
 export async function projectRoutes(app: FastifyInstance) {
   // All routes require authentication
@@ -61,6 +71,7 @@ export async function projectRoutes(app: FastifyInstance) {
   // GET /api/projects/:projectId
   app.get('/:projectId', async (request, reply) => {
     const { projectId } = request.params as { projectId: string }
+    if (!assertUuid(reply, projectId, 'projectId')) return
     const userId = request.user.sub
 
     const membership = await prisma.projectMember.findUnique({
@@ -78,6 +89,7 @@ export async function projectRoutes(app: FastifyInstance) {
   // PATCH /api/projects/:projectId
   app.patch('/:projectId', async (request, reply) => {
     const { projectId } = request.params as { projectId: string }
+    if (!assertUuid(reply, projectId, 'projectId')) return
     const userId = request.user.sub
     const body = UpdateProjectSchema.parse(request.body)
 
@@ -104,6 +116,7 @@ export async function projectRoutes(app: FastifyInstance) {
   // DELETE /api/projects/:projectId
   app.delete('/:projectId', async (request, reply) => {
     const { projectId } = request.params as { projectId: string }
+    if (!assertUuid(reply, projectId, 'projectId')) return
     const userId = request.user.sub
 
     const membership = await prisma.projectMember.findUnique({
