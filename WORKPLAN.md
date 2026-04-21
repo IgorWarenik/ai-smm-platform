@@ -6,15 +6,15 @@
 
 ## Статус проекта
 
-**Готовность MVP: 92%** `[█████████░]`
-**Тесты:** 121 / ~135 (цель) — unit, нет E2E
+**Готовность MVP: 95%** `[█████████░]`
+**Тесты:** 125 / ~135 (цель) — unit, нет E2E
 **Ветка:** `main` | Последний merge: Wave 7
 
 ### Блоки открытых задач
 
 | # | Блок | Приоритет | Статус |
 |---|------|-----------|--------|
-| W8 | **Wave 8** — PATCH task + Toast + Delete UI | 🔴 HIGH | ⏳ Codex+Gemini в работе |
+| W8 | **Wave 8** — PATCH task + Toast + Delete UI | 🔴 HIGH | ✅ смержен |
 | E1 | **E2E-тесты** — Playwright: login→create task→approve flow | 🟡 MED | ❌ не начато |
 | E2 | **n8n reconcile** — устранить расхождение `fa9037` vs `igor_g` путей | 🟡 MED | ❌ не начато |
 | E3 | **Production deploy** — cloud env, secrets, smoke test | 🟡 MED | ❌ не начато |
@@ -157,7 +157,7 @@
 
 ## Текущая задача (Wave 8 — 2026-04-21)
 
-**Статус:** Waves 1–7 ✅ смержены. 121/121 тестов.
+**Статус:** Waves 1–8 ✅ смержены. 125/125 тестов.
 
 | Этап | Статус |
 |------|--------|
@@ -171,8 +171,8 @@
 | Wave 5 DELETE task + UUID guards + Frontend UX | ✅ |
 | Wave 6 Rate limit + member removal + settings page | ✅ |
 | Wave 7 GET /members + nav active state + UX polish | ✅ |
-| Wave 8 | ⏳ |
+| Wave 8 PATCH task + Toast + Delete UI | ✅ |
 
-**Следующий шаг:** Wave 8 briefs выданы Codex + Gemini.
+**Следующий шаг:** Wave 9 или E1–E3 (E2E, n8n reconcile, deploy).
 
 **n8n риск:** `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, существующие workflow в `apps/workflows/local_5678_igor_g/personal`. Перед правками workflow запускать `npx --yes n8nac list`.

@@ -17,7 +17,11 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 - `apps/api/tests/tasks.test.ts`: +4 tests (200×2, 400, 404)
 - 121 → 125 tests
 
-### Gemini (`agent/frontend-v5`) — ожидает отчёта
+### Gemini (`agent/frontend-v5`) — ACCEPTED ✅
+
+- `components/Toast.tsx`: новый компонент (auto-dismiss 3s, success/error, fixed bottom-right)
+- `projects/[id]/page.tsx`: delete кнопка на каждой задаче (hover-reveal ×), toast на create/delete
+- tsc: 0 errors
 
 ---
 
