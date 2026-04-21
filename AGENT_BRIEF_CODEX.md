@@ -1,254 +1,330 @@
 # Agent Brief — Codex
-## Branch: `agent/hardening`
+## Branch: `agent/backend-v2`
 
-**Stack:** Fastify + TypeScript + Prisma + Zod. You are a subcontractor; Claude is the orchestrator.
+**Stack:** Fastify + TypeScript + Prisma. Claude is orchestrator.
 
 **Rules:**
-- Work ONLY in your assigned files
-- Do NOT merge — Claude reviews and merges
-- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 3 → Codex`
+- New branch from main: `git checkout -b agent/backend-v2`
+- Work ONLY in assigned files
+- Do NOT merge — Claude reviews
+- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 4 → Codex`
 - Validation: `npx tsc --noEmit -p apps/api/tsconfig.json` + `npx vitest run` must pass
 
 ---
 
-## Your Files (ownership)
+## Your Files
 
 ```
-packages/shared/src/schemas.ts        ← PRIMARY
-apps/api/src/routes/tasks.ts          ← PRIMARY
-apps/api/src/index.ts                 ← PRIMARY (env validation)
-apps/api/tests/feedback.test.ts       ← PRIMARY (new file)
+apps/api/src/routes/knowledge.ts      ← PRIMARY
+apps/api/tests/knowledge.test.ts      ← PRIMARY
 ```
 
-Do NOT touch: auth.ts, approvals.ts, knowledge.ts, projects.ts, profile.ts, callback.ts, feedback.ts, sse.ts, any package outside shared/
+Do NOT touch: tasks.ts, approvals.ts, auth.ts, projects.ts, callback.ts, profile.ts, feedback.ts, any packages/
 
 ---
 
-## Task 1 — Approval schema: enforce MIN_REVISION_FEEDBACK_CHARS
+## Task 1 — DELETE /api/projects/:projectId/knowledge/:itemId
 
-**File:** `packages/shared/src/schemas.ts`
+**File:** `apps/api/src/routes/knowledge.ts`
 
-**Problem:** `CreateApprovalSchema` has `comment: z.string().max(2000).optional()`. When `decision === REVISION_REQUESTED`, `comment` is the revision instruction passed to Scenario D agents. If the comment is missing or too short, agents receive vague instructions.
-
-**Import** `MIN_REVISION_FEEDBACK_CHARS` from the ai-engine package — but since shared cannot import ai-engine (circular dep risk), hardcode the value as a local constant:
+Add after the existing `GET /` (list) handler:
 
 ```typescript
-const MIN_REVISION_CHARS = 50  // mirrors MIN_REVISION_FEEDBACK_CHARS in ai-engine
+// DELETE /api/projects/:projectId/knowledge/:itemId
+app.delete('/:itemId', async (request, reply) => {
+  const { projectId, itemId } = request.params as { projectId: string; itemId: string }
+  const userId = request.user.sub
+
+  const membership = await prisma.projectMember.findUnique({
+    where: { userId_projectId: { userId, projectId } },
+  })
+  if (!membership) return reply.notFound('Project not found')
+
+  return withProjectContext(projectId, userId, async (tx) => {
+    const item = await tx.knowledgeItem.findUnique({ where: { id: itemId } })
+    if (!item || item.projectId !== projectId) return reply.notFound('Knowledge item not found')
+
+    await tx.knowledgeItem.delete({ where: { id: itemId } })
+    return reply.code(204).send()
+  })
+})
 ```
 
-**Update** `CreateApprovalSchema` using `.superRefine()`:
+**Acceptance criteria:**
+- Member DELETE existing item → 204 no body
+- Non-member → 404
+- Item from different project → 404
+- Item not found → 404
+
+---
+
+## Task 2 — PATCH /api/projects/:projectId/knowledge/:itemId
+
+**File:** `apps/api/src/routes/knowledge.ts`
+
+Add a `PatchKnowledgeItemSchema` at the top of the file (after existing imports):
 
 ```typescript
-export const CreateApprovalSchema = z.object({
-  decision: z.nativeEnum(ApprovalDecision),
-  comment: z.string().max(2000).optional(),
-}).superRefine((data, ctx) => {
-  if (data.decision === ApprovalDecision.REVISION_REQUESTED) {
-    if (!data.comment || data.comment.trim().length < MIN_REVISION_CHARS) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.too_small,
-        minimum: MIN_REVISION_CHARS,
-        type: 'string',
-        inclusive: true,
-        message: `Revision feedback must be at least ${MIN_REVISION_CHARS} characters`,
-        path: ['comment'],
+import { KnowledgeCategory } from '@ai-marketing/shared'
+
+const PatchKnowledgeItemSchema = z.object({
+  content: z.string().min(1).max(10000).optional(),
+  metadata: z.record(z.unknown()).optional(),
+  category: z.nativeEnum(KnowledgeCategory).optional(),
+})
+```
+
+Note: `z` is already imported (used by the POST handler). `KnowledgeCategory` must be imported from `@ai-marketing/shared`.
+
+Add the handler after the DELETE handler:
+
+```typescript
+// PATCH /api/projects/:projectId/knowledge/:itemId
+app.patch('/:itemId', async (request, reply) => {
+  const { projectId, itemId } = request.params as { projectId: string; itemId: string }
+  const userId = request.user.sub
+  const body = PatchKnowledgeItemSchema.parse(request.body)
+
+  if (Object.keys(body).length === 0) {
+    return reply.badRequest('At least one field required')
+  }
+
+  const membership = await prisma.projectMember.findUnique({
+    where: { userId_projectId: { userId, projectId } },
+  })
+  if (!membership) return reply.notFound('Project not found')
+
+  return withProjectContext(projectId, userId, async (tx) => {
+    const item = await tx.knowledgeItem.findUnique({ where: { id: itemId } })
+    if (!item || item.projectId !== projectId) return reply.notFound('Knowledge item not found')
+
+    const updated = await tx.knowledgeItem.update({
+      where: { id: itemId },
+      data: {
+        ...(body.content !== undefined && { content: body.content }),
+        ...(body.metadata !== undefined && { metadata: body.metadata }),
+        ...(body.category !== undefined && { category: body.category }),
+      },
+    })
+
+    // Re-embed asynchronously if content changed
+    if (body.content !== undefined) {
+      const serviceUserId = process.env.INTERNAL_SERVICE_USER_ID ?? '00000000-0000-0000-0000-000000000000'
+      embedText(body.content).then(async (vector) => {
+        await withProjectContext(projectId, serviceUserId, async (ctx) => {
+          await ctx.knowledgeItem.update({
+            where: { id: itemId },
+            data: { embedding: `[${vector.join(',')}]` },
+          })
+        })
+      }).catch((err) => {
+        console.error({ err, itemId }, 'Failed to re-embed updated knowledge item')
       })
     }
-  }
+
+    return reply.send({ data: updated })
+  })
 })
 ```
 
+**Note:** `embedText` and `withProjectContext` are already imported at the top of knowledge.ts — verify before adding duplicate imports.
+
 **Acceptance criteria:**
-- `REVISION_REQUESTED` with `comment: undefined` → Zod throws 400
-- `REVISION_REQUESTED` with `comment: 'too short'` (< 50 chars) → Zod throws 400
-- `REVISION_REQUESTED` with `comment: 'x'.repeat(50)` → passes validation
-- `APPROVED` with no comment → still passes (no change to APPROVED/REJECTED behavior)
+- PATCH content → 200 with updated item; re-embed fires async
+- PATCH category → 200 with updated category
+- PATCH empty body `{}` → 400
+- Non-member → 404
+- Item not found → 404
 
 ---
 
-## Task 2 — Add TaskQuerySchema with status filter
+## Task 3 — Update `apps/api/tests/knowledge.test.ts`
 
-**File:** `packages/shared/src/schemas.ts`
+Add two new describe blocks at the end of the file.
 
-**Problem:** Frontend needs to filter tasks by status (e.g., show only AWAITING_APPROVAL). Current `PaginationSchema` has no status filter.
-
-**Add** after `PaginationSchema`:
+### Check existing mock
+Verify the existing `vi.mock('@ai-marketing/db', ...)` factory includes `knowledgeItem.delete` and `knowledgeItem.update`. If missing, add them:
 
 ```typescript
-export const TaskQuerySchema = PaginationSchema.extend({
-  status: z.nativeEnum(TaskStatus).optional(),
+knowledgeItem: {
+  create: vi.fn(),
+  findMany: vi.fn().mockResolvedValue([]),
+  findUnique: vi.fn(),
+  update: vi.fn(),          // ← needed for PATCH
+  delete: vi.fn(),          // ← needed for DELETE
+  count: vi.fn().mockResolvedValue(0),
+},
+```
+
+### DELETE suite
+
+```typescript
+describe('DELETE /api/projects/:projectId/knowledge/:itemId', () => {
+  let app: FastifyInstance
+
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
+
+  afterEach(async () => { await app.close() })
+
+  it('204 — member deletes existing item', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.findUnique.mockResolvedValue({
+      id: 'item-1', projectId: PROJECT_ID,
+    })
+    db.knowledgeItem.delete.mockResolvedValue({})
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(204)
+  })
+
+  it('404 — item not found', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/knowledge/nonexistent`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('404 — non-member cannot delete', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+    expect(res.statusCode).toBe(404)
+  })
 })
-export type TaskQueryInput = z.infer<typeof TaskQuerySchema>
 ```
 
-**File:** `apps/api/src/routes/tasks.ts`
-
-**Update** `GET /api/projects/:projectId/tasks` handler to use `TaskQuerySchema`:
+### PATCH suite
 
 ```typescript
-import { TaskQuerySchema } from '@ai-marketing/shared'
+describe('PATCH /api/projects/:projectId/knowledge/:itemId', () => {
+  let app: FastifyInstance
 
-// In the GET / handler, replace:
-const query = PaginationSchema.parse(request.query)
-// With:
-const query = TaskQuerySchema.parse(request.query)
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
+    mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
+    app = await buildApp()
+  })
 
-// And add status to the where clause:
-const whereClause = { projectId, ...(query.status && { status: query.status }) }
+  afterEach(async () => { await app.close() })
 
-const [tasks, total] = await tx.$transaction([
-  tx.task.findMany({
-    where: whereClause,
-    skip: (query.page - 1) * query.pageSize,
-    take: query.pageSize,
-    orderBy: { createdAt: 'desc' },
-  }),
-  tx.task.count({ where: whereClause }),
-])
+  it('200 — updates content', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.findUnique.mockResolvedValue({ id: 'item-1', projectId: PROJECT_ID })
+    db.knowledgeItem.update.mockResolvedValue({
+      id: 'item-1', projectId: PROJECT_ID, content: 'Updated content',
+      category: 'TEMPLATE',
+    })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { content: 'Updated content' },
+    })
+    expect(res.statusCode).toBe(200)
+    expect(res.json().data.content).toBe('Updated content')
+  })
+
+  it('400 — empty body rejected', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: {},
+    })
+    expect(res.statusCode).toBe(400)
+  })
+
+  it('404 — non-member cannot patch', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { content: 'Updated' },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+
+  it('404 — item not found', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.knowledgeItem.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'PATCH',
+      url: `/api/projects/${PROJECT_ID}/knowledge/item-1`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { content: 'Updated' },
+    })
+    expect(res.statusCode).toBe(404)
+  })
+})
 ```
 
-**Acceptance criteria:**
-- `GET /tasks` with no `status` param → returns all tasks (existing behavior)
-- `GET /tasks?status=AWAITING_APPROVAL` → returns only tasks with that status
-- `GET /tasks?status=INVALID` → 400 (Zod validation error)
+**Expected test count after this task:** 103 existing + 7 new = **110 passing**
 
 ---
 
-## Task 3 — Startup env validation (fail-fast)
-
-**File:** `apps/api/src/index.ts`
-
-**Problem:** Missing required env vars (DATABASE_URL, JWT_SECRET, etc.) cause cryptic runtime errors deep in the call stack. Better to fail at boot with a clear message.
-
-**Add** a validation function before `buildApp()`:
-
-```typescript
-function validateEnv(): void {
-  const required = [
-    'DATABASE_URL',
-    'JWT_SECRET',
-    'JWT_REFRESH_SECRET',
-    'INTERNAL_API_TOKEN',
-  ]
-  const missing = required.filter((k) => !process.env[k]?.trim())
-  if (missing.length > 0) {
-    console.error(`Missing required environment variables: ${missing.join(', ')}`)
-    process.exit(1)
-  }
-}
-
-async function main() {
-  validateEnv()    // ← add this line at the top of main()
-  const app = await buildApp()
-  ...
-}
-```
-
-**Important:** Do NOT call `validateEnv()` at module load time — only inside `main()`. Tests call `buildApp()` directly without `main()`, so this must not run during tests.
-
-**Acceptance criteria:**
-- With all required vars set → app starts normally
-- With `DATABASE_URL` missing → process logs the missing key and exits with code 1
-- Tests are NOT affected (they call `buildApp()` directly, not `main()`)
-
----
-
-## Task 4 — Write `apps/api/tests/feedback.test.ts`
-
-**File:** `apps/api/tests/feedback.test.ts` (new file)
-
-**Pattern:** Follow the exact same mock pattern as `tasks.test.ts` or `knowledge.test.ts`. Key elements:
-- `beforeAll` sets env vars
-- `vi.mock('@ai-marketing/db', ...)` with all needed prisma models
-- `vi.mock('@ai-marketing/ai-engine', ...)` with `renderTokenPrometheusMetrics`
-- `vi.mock('bcryptjs', ...)` 
-- `mockWPC.mockImplementation(async (_pid, _uid, cb) => cb(db))` in each `beforeEach`
-- `db.$transaction.mockImplementation(...)` for both array and callback forms
-- `getToken()` helper to get a real JWT via mocked login
-
-**Models needed in prisma mock:**
-```typescript
-prisma: {
-  user: { findUnique: vi.fn(), create: vi.fn() },
-  refreshToken: { create: vi.fn().mockResolvedValue({}), findUnique: vi.fn(), update: vi.fn().mockResolvedValue({}), updateMany: vi.fn().mockResolvedValue({}) },
-  projectMember: { findUnique: vi.fn() },
-  task: { findFirst: vi.fn() },
-  agentFeedback: {
-    create: vi.fn(),
-    findMany: vi.fn().mockResolvedValue([]),
-    count: vi.fn().mockResolvedValue(0),
-  },
-  $transaction: vi.fn(),
-}
-```
-
-**Test suites to write:**
-
-### GET /api/projects/:projectId/tasks/:taskId/feedback
-URL pattern: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}/feedback`
-
-| Case | Setup | Expected |
-|------|-------|----------|
-| 200 — member gets list | membership: MEMBER, task exists, agentFeedback.findMany: [{...}] | 200, data array |
-| 404 — non-member | membership: null | 404 |
-| 404 — task not found | membership: MEMBER, task.findFirst: null | 404 |
-
-### POST /api/projects/:projectId/tasks/:taskId/feedback
-Body: `{ agentType: 'MARKETER', score: 4, comment: 'Good output, minor tone issues' }`
-
-| Case | Setup | Expected |
-|------|-------|----------|
-| 201 — creates feedback | membership: MEMBER, task exists, agentFeedback.create returns record | 201, data |
-| 400 — invalid agentType | membership: MEMBER, agentType: 'INVALID' | 400 |
-| 400 — score out of range | membership: MEMBER, score: 6 | 400 |
-| 404 — non-member | membership: null | 404 |
-| 404 — task not found | membership: MEMBER, task.findFirst: null | 404 |
-
-**IDs must be valid UUIDs:**
-```typescript
-const PROJECT_ID = 'a0000000-0000-0000-0000-000000000001'
-const TASK_ID = 'b0000000-0000-0000-0000-000000000002'
-const USER_ID = 'c0000000-0000-0000-0000-000000000003'
-```
-
-Note: the route is registered as `/api/projects/:projectId/tasks/:taskId/feedback` — check `apps/api/src/app.ts` for the exact prefix.
-
-**Acceptance criteria:**
-- All 8 test cases pass
-- `npx vitest run apps/api/tests/feedback.test.ts` → green
-- No imports from real DB/Redis
-
----
-
-## Context
+## Architecture context
 
 ```
-Route registration (apps/api/src/app.ts):
-  feedbackRoutes registered under /api/projects/:projectId/tasks/:taskId/feedback
+apps/api/src/routes/knowledge.ts — current routes:
+  POST   /                  → create knowledge item
+  GET    /search            → semantic search (?q=)
+  GET    /                  → list (paginated)
+  ← ADD: DELETE /:itemId   → delete item
+  ← ADD: PATCH  /:itemId   → update item
 
-AgentType enum (packages/shared/src/enums.ts):
-  MARKETER | CONTENT_MAKER | EVALUATOR
-
-Valid agentType values: 'MARKETER', 'CONTENT_MAKER', 'EVALUATOR'
-```
-
-```typescript
-// Key imports:
-import { withProjectContext } from '@ai-marketing/db'
-import { TaskQuerySchema, CreateApprovalSchema } from '@ai-marketing/shared'
+Existing imports in knowledge.ts (do NOT duplicate):
+  import { prisma, withProjectContext } from '@ai-marketing/db'
+  import { embedText, ... } from '@ai-marketing/ai-engine'
+  import z from 'zod'
 ```
 
 ---
 
 ## How to submit
 
-1. Work on new branch `agent/hardening` (create from main: `git checkout -b agent/hardening`)
-2. Run `npx tsc --noEmit -p apps/api/tsconfig.json` — must be clean
-3. Run `npx tsc --noEmit -p packages/shared/tsconfig.json` — must be clean
-4. Run `npx vitest run` — must be 103 passed (95 existing + 8 new feedback tests)
-5. Commit all changes with descriptive message
-6. Write report in `AGENTS_CHAT.md` under `## Wave 3 → Codex`:
+1. `git checkout -b agent/backend-v2` from main
+2. Make changes
+3. `npx tsc --noEmit -p apps/api/tsconfig.json` — zero errors
+4. `npx vitest run` — 110/110 pass
+5. Commit with descriptive message
+6. Write report in `AGENTS_CHAT.md` under `## Wave 4 → Codex`:
    - What was done
-   - Test count: before → after
-   - Any deviations from the brief
-7. Tell the human "done, agent/hardening ready for review"
+   - Test count: 103 → 110
+   - Any deviations
+7. Tell the human "done, agent/backend-v2 ready for review"
