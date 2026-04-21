@@ -1,6 +1,6 @@
 ---
 created: "2026-04-20T00:00:00Z"
-last_edited: "2026-04-20T00:00:00Z"
+last_edited: "2026-04-20T14:30:00Z"
 complexity: high
 ---
 
@@ -28,7 +28,7 @@ Cross-cutting controls on outbound LLM and embedding usage. Covers per-operation
 - [ ] Operation class marketer brief enforces MAX_TOKENS_MARKETER_BRIEF.
 - [ ] Operation class content generation enforces MAX_TOKENS_CONTENT_GENERATION.
 - [ ] Operation class revision delta enforces MAX_TOKENS_REVISION_DELTA.
-- [ ] [GAP] MIN_REVISION_FEEDBACK_CHARS is referenced in external specs but not present in the shared token-budgets package.
+- [ ] MIN_REVISION_FEEDBACK_CHARS enforces minimum feedback length in Scenario D revision delta.
 **Dependencies:** R1
 
 ### R3: Centralized Embedding Invocation
