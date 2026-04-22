@@ -43,8 +43,17 @@ export async function taskRoutes(app: FastifyInstance) {
     })
     if (!membership) return reply.notFound('Project not found')
 
-    // Score the task (§11.1 ТЗ)
-    const scoring = await scoreTask(body.input)
+    let scoring: Awaited<ReturnType<typeof scoreTask>>
+    try {
+      // Score the task (§11.1 ТЗ)
+      scoring = await scoreTask(body.input)
+    } catch (err) {
+      app.log.error({ err }, 'Failed to score task')
+      return reply.code(502).send({
+        error: 'AI scoring is unavailable. Check Anthropic API credits or billing.',
+        code: 'AI_SCORING_UNAVAILABLE',
+      })
+    }
 
     const task = await withProjectContext(projectId, userId, async (tx) => {
       let status: TaskStatus

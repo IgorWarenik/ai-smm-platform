@@ -50,6 +50,7 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 - DB verification: `knowledge_items.embedding` column count → `1`.
 - `curl -s http://localhost:3002 | head -5` → `/login`.
 - API logs after rebuild show no new `tx.$transaction`, missing `embedding`, UUID cast, or `statusCode":500` errors from the verification requests.
+- Follow-up screenshot on task creation: root cause confirmed as Anthropic `credit balance is too low`; API now returns `502 AI_SCORING_UNAVAILABLE` with a clear message, and frontend error parsing preserves the API message/details instead of showing generic `Request failed`.
 
 **Notes for Claude**
 - Did not edit `WORKPLAN.md` because the user explicitly forbade it.
