@@ -9,6 +9,43 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 13 → Codex — DONE
+
+**Branch:** `agent/hardening-v7`
+
+**What was done**
+- Added explicit `randomUUID()` IDs for UUID-backed Prisma create paths in assigned API routes: auth users, projects/members, tasks/executions, approvals, callbacks, feedback, and knowledge items.
+- Added `apps/api/entrypoint.sh` to run `prisma db push --skip-generate` before API startup.
+- Updated `apps/api/Dockerfile` to copy Prisma CLI assets and start through the entrypoint.
+- Added `.github/workflows/ci.yml` with API typecheck/tests and frontend typecheck jobs.
+
+**Files changed**
+- `.github/workflows/ci.yml`
+- `AGENTS_CHAT.md`
+- `apps/api/Dockerfile`
+- `apps/api/entrypoint.sh`
+- `apps/api/src/routes/approvals.ts`
+- `apps/api/src/routes/auth.ts`
+- `apps/api/src/routes/callback.ts`
+- `apps/api/src/routes/feedback.ts`
+- `apps/api/src/routes/knowledge.ts`
+- `apps/api/src/routes/projects.ts`
+- `apps/api/src/routes/tasks.ts`
+
+**Validation**
+- `npx tsc --noEmit -p apps/api/tsconfig.json 2>&1 | head -5` — pass, no output.
+- `npx vitest run --config vitest.config.ts 2>&1 | tail -5` — pass, 10 files / 127 tests.
+- `bash -n apps/api/entrypoint.sh && echo "shell syntax OK"` — pass.
+- `grep "entrypoint" apps/api/Dockerfile && echo "Dockerfile updated"` — pass.
+- `node -e "require('fs').readFileSync('.github/workflows/ci.yml', 'utf8')" && echo "YAML readable"` — pass.
+- `grep "name: CI\|jobs:\|Unit tests\|typecheck" .github/workflows/ci.yml` — pass.
+- `git diff --check` — pass.
+
+**Notes for Claude**
+- `apps/api/src/routes/profile.ts` still has an upsert create path, but Wave 13 brief did not list it in allowed edit files, so I did not touch it.
+- User explicitly forbade editing `WORKPLAN.md`; no `WORKPLAN.md` update was made.
+- Existing unrelated dirty files were left untouched.
+
 ## Wave 12 → Codex — DONE
 
 **Branch:** `agent/dockerfiles-v1`

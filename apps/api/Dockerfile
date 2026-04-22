@@ -48,6 +48,8 @@ RUN apk add --no-cache curl && \
 
 COPY --from=deps --chown=appuser:nodejs /repo/apps/api/node_modules ./apps/api/node_modules
 COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules ./packages/db/node_modules
+COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules/.bin ./packages/db/node_modules/.bin
+COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules/prisma ./packages/db/node_modules/prisma
 COPY --from=deps --chown=appuser:nodejs /repo/packages/shared/node_modules ./packages/shared/node_modules
 COPY --from=deps --chown=appuser:nodejs /repo/packages/ai-engine/node_modules ./packages/ai-engine/node_modules
 COPY --from=builder --chown=appuser:nodejs /repo/apps/api/dist ./apps/api/dist
@@ -64,6 +66,9 @@ RUN mkdir -p node_modules/@ai-marketing/shared node_modules/@ai-marketing/db nod
     printf '{"main":"../../../apps/api/dist/packages/ai-engine/src/index.js"}\n' > node_modules/@ai-marketing/ai-engine/package.json && \
     chown -R appuser:nodejs node_modules
 
+COPY --chown=appuser:nodejs apps/api/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+
 USER appuser
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
@@ -71,4 +76,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 
 ENV NODE_ENV=production \
     NODE_PATH=/repo/apps/api/node_modules:/repo/packages/db/node_modules:/repo/packages/shared/node_modules:/repo/packages/ai-engine/node_modules:/repo/node_modules
-CMD ["node", "apps/api/dist/apps/api/src/index.js"]
+CMD ["./entrypoint.sh"]

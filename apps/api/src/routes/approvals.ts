@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { randomUUID } from 'crypto'
 import { prisma, withProjectContext } from '@ai-marketing/db'
 import { CreateApprovalSchema, PaginationSchema } from '@ai-marketing/shared'
 import { TaskStatus, ApprovalDecision, APPROVAL_MAX_REVISIONS } from '@ai-marketing/shared'
@@ -66,6 +67,7 @@ export async function approvalRoutes(app: FastifyInstance) {
       // We still record the approval but flag when limit is reached
       const approval = await tx.approval.create({
         data: {
+          id: randomUUID(),
           projectId,
           taskId,
           decision: body.decision,

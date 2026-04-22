@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { randomUUID } from 'crypto'
 import { prisma, type Prisma, withProjectContext } from '@ai-marketing/db'
 import {
   CreateKnowledgeItemSchema,
@@ -33,6 +34,7 @@ export async function knowledgeRoutes(app: FastifyInstance) {
     const item = await withProjectContext(projectId, userId, async (tx) => {
       return tx.knowledgeItem.create({
         data: {
+          id: randomUUID(),
           projectId,
           category: body.category,
           content: body.content,
