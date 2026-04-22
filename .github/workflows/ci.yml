@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'agent/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Type-check & Unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            apps/api/package-lock.json
+            packages/shared/package-lock.json
+            packages/db/package-lock.json
+            packages/ai-engine/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm install --prefix packages/shared
+          npm install --prefix packages/db
+          npm install --prefix packages/ai-engine
+          npm install --prefix apps/api
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema packages/db/prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+
+      - name: Typecheck API
+        run: npx tsc --noEmit -p apps/api/tsconfig.json
+
+      - name: Unit tests
+        run: npx vitest run --config vitest.config.ts
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          JWT_SECRET: ci-secret-32-chars-minimum-length
+          JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-minimum!
+          INTERNAL_API_TOKEN: ci-internal-token
+          ANTHROPIC_API_KEY: dummy
+          VOYAGE_API_KEY: dummy
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook
+          N8N_API_KEY: dummy
+          API_BASE_URL: http://localhost:3001
+          PORT: '3001'
+          HOST: '0.0.0.0'
+          FRONTEND_URL: http://localhost:3000
+
+  typecheck-frontend:
+    name: Type-check Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        run: npm install --prefix apps/frontend
+
+      - name: Type-check Frontend
+        run: npx tsc --noEmit -p apps/frontend/tsconfig.json

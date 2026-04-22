@@ -1,4 +1,5 @@
 import type { FastifyInstance } from 'fastify'
+import { randomUUID } from 'crypto'
 import { prisma, withProjectContext } from '@ai-marketing/db'
 import { CreateAgentFeedbackSchema, PaginationSchema } from '@ai-marketing/shared'
 
@@ -52,6 +53,7 @@ export async function feedbackRoutes(app: FastifyInstance) {
 
       const feedback = await tx.agentFeedback.create({
         data: {
+          id: randomUUID(),
           projectId,
           taskId,
           agentType: body.agentType,

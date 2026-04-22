@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
+import { randomUUID } from 'crypto'
 import { prisma, withProjectContext } from '@ai-marketing/db'
 import {
   CreateProjectSchema,
@@ -29,11 +30,12 @@ export async function projectRoutes(app: FastifyInstance) {
 
     const project = await prisma.project.create({
       data: {
+        id: randomUUID(),
         ownerId: userId,
         name: body.name,
         settings: body.settings ?? {},
         members: {
-          create: { userId, role: MemberRole.OWNER },
+          create: { id: randomUUID(), userId, role: MemberRole.OWNER },
         },
       },
     })
@@ -176,7 +178,7 @@ export async function projectRoutes(app: FastifyInstance) {
     const member = await prisma.projectMember.upsert({
       where: { userId_projectId: { userId: targetUser.id, projectId } },
       update: { role: body.role },
-      create: { userId: targetUser.id, projectId, role: body.role },
+      create: { id: randomUUID(), userId: targetUser.id, projectId, role: body.role },
     })
 
     return reply.code(201).send({ data: member })

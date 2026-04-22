@@ -1,4 +1,4 @@
-import { timingSafeEqual } from 'node:crypto'
+import { randomUUID, timingSafeEqual } from 'node:crypto'
 import type { FastifyInstance } from 'fastify'
 import { prisma, withProjectContext } from '@ai-marketing/db'
 import { AgentResultCallbackSchema, ExecutionCompleteSchema } from '@ai-marketing/shared'
@@ -125,6 +125,7 @@ export async function callbackRoutes(app: FastifyInstance) {
       await withProjectContext(projectId, userId, async (tx) => {
         await tx.agentOutput.create({
           data: {
+            id: randomUUID(),
             executionId: body.executionId,
             agentType: body.agentType as AgentType,
             output: body.output,

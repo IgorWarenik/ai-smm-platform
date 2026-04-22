@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import { prisma, withProjectContext } from '@ai-marketing/db'
 import {
   ClarificationResponseSchema,
@@ -63,6 +64,7 @@ export async function taskRoutes(app: FastifyInstance) {
 
       return tx.task.create({
         data: {
+          id: randomUUID(),
           projectId,
           input: body.input,
           score: scoring.score,
@@ -324,7 +326,7 @@ export async function taskRoutes(app: FastifyInstance) {
     // Create execution record
     const execution = await withProjectContext(projectId, userId, async (tx) => {
       const exec = await tx.execution.create({
-        data: { taskId, projectId, scenario, status: ExecutionStatus.RUNNING },
+        data: { id: randomUUID(), taskId, projectId, scenario, status: ExecutionStatus.RUNNING },
       })
       await tx.task.update({
         where: { id: taskId },
