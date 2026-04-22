@@ -1,221 +1,368 @@
 # Agent Brief — Codex
-## Wave 12 | Branch: `agent/dockerfiles-v1`
+## Wave 13 | Branch: `agent/hardening-v7`
 
-**Goal:** Create production Dockerfiles for API and Frontend so `docker-compose up` works.
-Current root `Dockerfile` is Python/FastAPI — wrong stack, replace it.
+**Three tasks. All mandatory. All on same branch.**
 
 **Rules:**
-- New branch from main: `git checkout -b agent/dockerfiles-v1`
-- Touch ONLY the files listed below
-- Do NOT touch any existing source files, configs, or tests
+- Branch from main: `git checkout -b agent/hardening-v7`
+- Touch ONLY files listed per task
+- Do NOT touch tests, schemas, or workflow files
 - Do NOT merge — Claude reviews
-- On finish: commit, write report to `AGENTS_CHAT.md` under `## Wave 12 → Codex`
-- Validation: `docker build -f apps/api/Dockerfile . --target=runner --no-cache 2>&1 | tail -5` — must NOT error
+- On finish: commit all, write report to `AGENTS_CHAT.md` under `## Wave 13 → Codex`
 
 ---
 
-## Stack context
+## Task 1 — Prisma UUID fix (all create calls)
 
-```
-Monorepo root: /repo  (docker build context = repo root)
-Node.js version: 20 LTS
-Package manager: npm (individual per package — no root workspace)
+**Problem:** Prisma 5 `@default(dbgenerated("gen_random_uuid()")) @db.Uuid` generates CUID2
+client-side under ts-node instead of letting the DB generate a UUID. The runtime then
+validates the CUID2 against `@db.Uuid` and throws P2023. We already fixed `refreshToken.create`
+in a prior wave; now fix ALL remaining `.create()` calls in `apps/api/src/routes/`.
 
-apps/api/
-  package.json         scripts: build=tsc, start=node dist/index.js
-  tsconfig.json        outDir=./dist, rootDir=../..   ← builds into apps/api/dist/
-  src/index.ts         entry point
+**Fix pattern:** add `id: randomUUID()` as the first field in every `data:` object where:
+1. The model ID is `@db.Uuid` (all models in this repo are), AND
+2. No explicit `id` is currently passed
 
-apps/frontend/
-  package.json         scripts: build=next build, start=next start
-  next.config.ts
-  src/                 Next.js App Router
+`randomUUID` is already imported in `apps/api/src/routes/auth.ts`. Add it to the other files.
 
-packages/shared/       imported by both api and frontend
-packages/db/           imported by api (prisma client)
-packages/ai-engine/    imported by api
-```
+### Files to edit
 
-**Key facts:**
-- `apps/api/tsconfig.json` has `rootDir: "../.."` — tsc must run from repo root, not from `apps/api/`
-- `@ai-marketing/shared`, `@ai-marketing/db`, `@ai-marketing/ai-engine` linked via `node_modules` symlinks
-- API listens on `PORT` env var (default 3001), health: `GET /health`
-- Frontend listens on port 3000, env: `NEXT_PUBLIC_API_URL`
-- Prisma client binary baked into node_modules (no re-generate needed at runtime)
+#### `apps/api/src/routes/projects.ts`
+Add `import { randomUUID } from 'crypto'` at top.
 
----
-
-## File 1: `apps/api/Dockerfile`
-
-Multi-stage Node 20 image. Build context = repo root.
-
-Requirements:
-- Stage `deps`: install ALL node_modules (root + packages/* + apps/api)
-- Stage `builder`: copy source, run `npx tsc -p apps/api/tsconfig.json` — produces `apps/api/dist/`
-- Stage `runner`: copy only `node_modules` + compiled `apps/api/dist/` — no dev deps, no source
-- USER nonroot (uid 1001)
-- EXPOSE 3001
-- HEALTHCHECK `curl -f http://localhost:3001/health || exit 1`
-- CMD `["node", "apps/api/dist/apps/api/src/index.js"]`
-  (outDir=apps/api/dist, rootDir=../.., so compiled path mirrors source path from root)
-
-Prisma note: copy `packages/db/node_modules/.prisma/` and `node_modules/.prisma/` into runner stage — Prisma needs the native binary.
-
-```dockerfile
-# apps/api/Dockerfile
-FROM node:20-alpine AS deps
-WORKDIR /repo
-
-# Copy all package.json files first (layer cache)
-COPY package.json package-lock.json* ./
-COPY apps/api/package.json apps/api/package-lock.json* ./apps/api/
-COPY packages/shared/package.json ./packages/shared/
-COPY packages/db/package.json packages/db/package-lock.json* ./packages/db/
-COPY packages/ai-engine/package.json packages/ai-engine/package-lock.json* ./packages/ai-engine/
-
-# Install deps for each package
-RUN npm install --prefix apps/api --ignore-scripts 2>/dev/null || npm install --prefix apps/api
-RUN npm install --prefix packages/db --ignore-scripts 2>/dev/null || npm install --prefix packages/db
-RUN npm install --prefix packages/shared --ignore-scripts 2>/dev/null || npm install --prefix packages/shared
-RUN npm install --prefix packages/ai-engine --ignore-scripts 2>/dev/null || npm install --prefix packages/ai-engine
-
-# --- builder ---
-FROM node:20-alpine AS builder
-WORKDIR /repo
-
-COPY --from=deps /repo/node_modules ./node_modules
-COPY --from=deps /repo/apps/api/node_modules ./apps/api/node_modules
-COPY --from=deps /repo/packages/db/node_modules ./packages/db/node_modules
-COPY --from=deps /repo/packages/shared/node_modules* ./packages/shared/
-COPY --from=deps /repo/packages/ai-engine/node_modules* ./packages/ai-engine/
-
-# Copy source
-COPY apps/api ./apps/api
-COPY packages ./packages
-
-RUN npx tsc -p apps/api/tsconfig.json
-
-# --- runner ---
-FROM node:20-alpine AS runner
-WORKDIR /repo
-
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 appuser
-
-COPY --from=deps --chown=appuser:nodejs /repo/apps/api/node_modules ./apps/api/node_modules
-COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules ./packages/db/node_modules
-COPY --from=builder --chown=appuser:nodejs /repo/apps/api/dist ./apps/api/dist
-COPY --from=builder --chown=appuser:nodejs /repo/packages/db/prisma ./packages/db/prisma
-
-# Prisma engine binary
-COPY --from=deps /repo/node_modules/.prisma ./node_modules/.prisma
-COPY --from=deps /repo/packages/db/node_modules/.prisma ./packages/db/node_modules/.prisma
-
-USER appuser
-EXPOSE 3001
-HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD wget -qO- http://localhost:3001/health || exit 1
-
-ENV NODE_ENV=production
-CMD ["node", "apps/api/dist/apps/api/src/index.js"]
+In `project.create({ data: { ... } })` (line ~30):
+```typescript
+const project = await prisma.project.create({
+  data: {
+    id: randomUUID(),        // ← add
+    ownerId: userId,
+    name: body.name,
+    settings: body.settings ?? {},
+    members: {
+      create: {
+        id: randomUUID(),    // ← add (ProjectMember nested create)
+        userId,
+        role: MemberRole.OWNER,
+      },
+    },
+  },
+})
 ```
 
-**IMPORTANT:** Verify the actual compiled output path by checking what `tsc -p apps/api/tsconfig.json` produces given `outDir=./dist` and `rootDir=../..`. The entry point relative to repo root will be `apps/api/dist/apps/api/src/index.js`. If different, adjust CMD accordingly.
+Also find `projectMember.create` if any exists (e.g. in invite/add-member route) and add `id: randomUUID()` there too.
 
----
+#### `apps/api/src/routes/tasks.ts`
+Add `import { randomUUID } from 'crypto'` at top (if not present).
 
-## File 2: `apps/frontend/Dockerfile`
-
-Standard Next.js standalone output.
-
-Requirements:
-- Stage `deps`: install `apps/frontend` deps
-- Stage `builder`: `npm run build` inside `apps/frontend` with `NEXT_TELEMETRY_DISABLED=1`
-- Stage `runner`: copy Next.js standalone output (`.next/standalone` + `.next/static`)
-- USER nonroot (uid 1001)
-- EXPOSE 3000
-- ENV `NODE_ENV=production PORT=3000 HOSTNAME=0.0.0.0`
-- CMD `["node", "server.js"]` (from standalone output)
-
-Add to `apps/frontend/next.config.ts`:
-```ts
-output: 'standalone'
+`task.create` (line ~64):
+```typescript
+return tx.task.create({
+  data: {
+    id: randomUUID(),   // ← add
+    projectId,
+    input: body.input,
+    score: scoring.score,
+    scenario: scoring.isValid ? (scoring.scenario as ScenarioType) : null,
+    status,
+    clarificationNote,
+    ...(status === TaskStatus.REJECTED && { rejectedAt: new Date() }),
+  },
+})
 ```
-(If `output: 'standalone'` already present — skip. If not — add it. Read the file first.)
 
-```dockerfile
-# apps/frontend/Dockerfile
-FROM node:20-alpine AS deps
-WORKDIR /app
-COPY apps/frontend/package.json apps/frontend/package-lock.json* ./
-RUN npm install --frozen-lockfile 2>/dev/null || npm install
+`execution.create` (line ~326):
+```typescript
+const exec = await tx.execution.create({
+  data: {
+    id: randomUUID(),   // ← add
+    taskId,
+    projectId,
+    scenario,
+    status: ExecutionStatus.RUNNING,
+  },
+})
+```
 
-FROM node:20-alpine AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY apps/frontend .
-COPY packages/shared /repo/packages/shared
-ENV NEXT_TELEMETRY_DISABLED=1
-RUN npm run build
+#### `apps/api/src/routes/approvals.ts`
+Add `import { randomUUID } from 'crypto'` at top.
 
-FROM node:20-alpine AS runner
-WORKDIR /app
-ENV NODE_ENV=production \
-    PORT=3000 \
-    HOSTNAME=0.0.0.0 \
-    NEXT_TELEMETRY_DISABLED=1
+`approval.create` (line ~67):
+```typescript
+const approval = await tx.approval.create({
+  data: {
+    id: randomUUID(),   // ← add
+    projectId,
+    taskId,
+    decision: body.decision,
+    comment: body.comment,
+    iteration,
+    decidedById: userId,
+  },
+})
+```
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 nextjs
+#### `apps/api/src/routes/callback.ts`
+Add `import { randomUUID } from 'crypto'` at top.
 
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public 2>/dev/null || true
+`agentOutput.create` (line ~126):
+```typescript
+await tx.agentOutput.create({
+  data: {
+    id: randomUUID(),   // ← add
+    executionId: body.executionId,
+    agentType: body.agentType as AgentType,
+    output: body.output,
+    iteration: body.iteration,
+    evalScore: body.evalScore ?? null,
+  },
+})
+```
 
-USER nextjs
-EXPOSE 3000
-CMD ["node", "server.js"]
+#### `apps/api/src/routes/feedback.ts`
+Add `import { randomUUID } from 'crypto'` at top.
+
+`agentFeedback.create` (line ~53):
+```typescript
+const feedback = await tx.agentFeedback.create({
+  data: {
+    id: randomUUID(),   // ← add
+    projectId,
+    taskId,
+    agentType: body.agentType,
+    score: body.score,
+    comment: body.comment,
+  },
+})
+```
+
+#### `apps/api/src/routes/knowledge.ts`
+Add `import { randomUUID } from 'crypto'` at top.
+
+`knowledgeItem.create` (line ~34):
+```typescript
+return tx.knowledgeItem.create({
+  data: {
+    id: randomUUID(),   // ← add
+    projectId,
+    category: body.category,
+    content: body.content,
+    metadata: body.metadata ?? {},
+  },
+})
+```
+
+#### `apps/api/src/routes/auth.ts`
+`user.create` (line ~46) — add `id: randomUUID()`:
+```typescript
+const user = await prisma.user.create({
+  data: {
+    id: randomUUID(),   // ← add
+    email: body.email,
+    passwordHash,
+    name: body.name ?? null,
+  },
+})
+```
+(`randomUUID` already imported here from prior fix.)
+
+**Validation:**
+```bash
+npx tsc --noEmit -p apps/api/tsconfig.json 2>&1 | head -5
+# must produce 0 output (no errors)
 ```
 
 ---
 
-## File 3: Replace root `Dockerfile`
+## Task 2 — API entrypoint script (run migrations on container start)
 
-Current `Dockerfile` at repo root is Python/FastAPI — wrong stack, leftover from early iteration.
-Replace entirely with a notice:
+**Problem:** `apps/api/Dockerfile` starts directly with `node`. When Docker Compose
+spins up a fresh postgres, the DB has no tables. API must run `prisma migrate deploy`
+(or `db push` for dev) before starting.
 
-```dockerfile
-# This file is intentionally minimal — the repo uses per-service Dockerfiles.
-# API:      apps/api/Dockerfile
-# Frontend: apps/frontend/Dockerfile
-# Compose:  docker-compose.yml (builds both)
-```
+**Note:** Schema uses `dbgenerated("gen_random_uuid()")` and `pgvector`. The Docker
+postgres image (`pgvector/pgvector:pg16`) has both `gen_random_uuid()` and `vector`
+extension available. Migration command: `prisma db push` (no migration history, just push).
 
----
-
-## Validation
+### File to create: `apps/api/entrypoint.sh`
 
 ```bash
-# Syntax check (no actual build — needs Docker daemon):
-docker build -f apps/api/Dockerfile . --no-cache --target deps 2>&1 | tail -5
-docker build -f apps/frontend/Dockerfile . --no-cache --target deps 2>&1 | tail -5
+#!/bin/sh
+set -e
 
-# tsc compile check (no Docker needed):
-npx tsc -p apps/api/tsconfig.json --noEmit 2>&1 | head -10
+echo "Running database schema sync..."
+node -e "
+const { execSync } = require('child_process');
+execSync(
+  'npx prisma db push --schema packages/db/prisma/schema.prisma --accept-data-loss --skip-generate',
+  { stdio: 'inherit', cwd: '/repo' }
+);
+" || echo "Warning: prisma db push failed, continuing..."
 
-# Verify next.config.ts has standalone:
-grep "standalone" apps/frontend/next.config.ts
+echo "Starting API..."
+exec node apps/api/dist/apps/api/src/index.js
 ```
 
-All must pass with 0 errors. If Docker daemon not available, tsc check + grep are sufficient.
+### File to edit: `apps/api/Dockerfile`
+
+In the `runner` stage, replace:
+```dockerfile
+CMD ["node", "apps/api/dist/apps/api/src/index.js"]
+```
+with:
+```dockerfile
+COPY --chown=appuser:nodejs apps/api/entrypoint.sh ./entrypoint.sh
+RUN chmod +x ./entrypoint.sh
+CMD ["./entrypoint.sh"]
+```
+
+Also add `prisma` binary to runner — it's needed for `prisma db push`:
+```dockerfile
+# After the existing COPY --from=deps lines, add:
+COPY --from=deps --chown=appuser:nodejs /repo/apps/api/node_modules/.bin/prisma ./apps/api/node_modules/.bin/prisma
+COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules/.bin/prisma ./packages/db/node_modules/.bin/prisma
+```
+
+Actually simpler — add `npx` approach is already shell-based. Just ensure `prisma` CLI is
+available. In `deps` stage, `packages/db` installs prisma as devDependency so
+`packages/db/node_modules/.bin/prisma` exists. In runner, copy it:
+
+In runner stage, add after existing COPY lines:
+```dockerfile
+COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules/.bin ./packages/db/node_modules/.bin
+COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules/prisma ./packages/db/node_modules/prisma
+```
+
+Then update entrypoint.sh to call prisma directly:
+```bash
+#!/bin/sh
+set -e
+echo "Syncing DB schema..."
+./packages/db/node_modules/.bin/prisma db push \
+  --schema packages/db/prisma/schema.prisma \
+  --accept-data-loss \
+  --skip-generate 2>&1 || echo "Warning: schema sync failed, continuing"
+echo "Starting API..."
+exec node apps/api/dist/apps/api/src/index.js
+```
+
+**Validation:**
+```bash
+# Syntax check only — no Docker daemon needed:
+bash -n apps/api/entrypoint.sh && echo "shell syntax OK"
+grep "entrypoint" apps/api/Dockerfile && echo "Dockerfile updated"
+```
+
+---
+
+## Task 3 — GitHub Actions CI
+
+### File to create: `.github/workflows/ci.yml`
+
+```yaml
+name: CI
+
+on:
+  push:
+    branches: [main, 'agent/**']
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    name: Type-check & Unit tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: |
+            apps/api/package-lock.json
+            packages/shared/package-lock.json
+            packages/db/package-lock.json
+            packages/ai-engine/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          npm install --prefix packages/shared
+          npm install --prefix packages/db
+          npm install --prefix packages/ai-engine
+          npm install --prefix apps/api
+
+      - name: Generate Prisma client
+        run: npx prisma generate --schema packages/db/prisma/schema.prisma
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+
+      - name: Type-check API
+        run: npx tsc --noEmit -p apps/api/tsconfig.json
+
+      - name: Unit tests
+        run: npx vitest run --config vitest.config.ts
+        env:
+          DATABASE_URL: postgresql://test:test@localhost:5432/test
+          JWT_SECRET: ci-secret-32-chars-minimum-length
+          JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-minimum!
+          INTERNAL_API_TOKEN: ci-internal-token
+          ANTHROPIC_API_KEY: dummy
+          VOYAGE_API_KEY: dummy
+          N8N_WEBHOOK_URL: http://localhost:5678/webhook
+          N8N_API_KEY: dummy
+          API_BASE_URL: http://localhost:3001
+          PORT: '3001'
+          HOST: '0.0.0.0'
+          FRONTEND_URL: http://localhost:3000
+
+  typecheck-frontend:
+    name: Type-check Frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: apps/frontend/package-lock.json
+
+      - name: Install dependencies
+        run: npm install --prefix apps/frontend
+
+      - name: Type-check Frontend
+        run: npx tsc --noEmit -p apps/frontend/tsconfig.json
+```
+
+**Note:** Unit tests mock the DB, so no real postgres needed for CI. `DATABASE_URL` is a
+dummy value used only for Prisma client generation at generate time.
+
+Check existing `vitest.config.ts` to confirm test command is correct:
+```bash
+head -10 vitest.config.ts
+```
+
+**Validation:**
+```bash
+# YAML syntax check:
+node -e "require('fs').readFileSync('.github/workflows/ci.yml', 'utf8')" && echo "YAML readable"
+# Confirm jobs present:
+grep "name: CI\|jobs:\|unit tests\|typecheck" .github/workflows/ci.yml
+```
 
 ---
 
 ## How to submit
 
-1. `git checkout -b agent/dockerfiles-v1` from main
-2. Create/modify files listed above
-3. Run validation commands
-4. Commit with message: `feat(docker): add API and frontend Dockerfiles, replace stale root Dockerfile`
-5. Write report to `AGENTS_CHAT.md` under `## Wave 12 → Codex`
-6. Report to human: "done, agent/dockerfiles-v1 ready for review"
+1. `git checkout -b agent/hardening-v7` from main
+2. Complete all three tasks
+3. Run validations listed per task
+4. `npx tsc --noEmit -p apps/api/tsconfig.json` — must produce 0 errors
+5. `npx vitest run --config vitest.config.ts 2>&1 | tail -5` — must show 127 passed
+6. Commit: `feat(hardening): prisma UUID fix all routes, entrypoint migrations, CI`
+7. Write report to `AGENTS_CHAT.md` under `## Wave 13 → Codex`:
+   - List every file changed
+   - Paste tsc + vitest results
+8. Tell human "done, agent/hardening-v7 ready for review"
