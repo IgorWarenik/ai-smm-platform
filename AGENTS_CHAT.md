@@ -9,6 +9,53 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 14 → Codex — DONE
+
+**Branch:** `agent/bugfix-v1`
+
+**Bugs found in Docker logs**
+- `GET /api/projects/:projectId/tasks?pageSize=20` → 500, `tx.$transaction is not a function`. Fixed by replacing transaction-client `$transaction` calls with `Promise.all`.
+- Same transaction-client bug existed in approvals and feedback list routes. Fixed proactively.
+- `GET /api/projects/:projectId/knowledge/search?q=...` → 500, `column "embedding" does not exist`. Fixed startup sync to create pgvector extension, `knowledge_items.embedding`, and vector index.
+- Background knowledge embedding write → `operator does not exist: uuid = text`. Fixed raw SQL UUID cast for `id`.
+- `PUT /api/projects/:projectId/profile` with old TOV values → 400 enum mismatch. Claude's pre-brief fix was present but uncommitted; included `OFFICIAL | FRIENDLY | EXPERT | PROVOCATIVE`.
+- `PUT /api/projects/:projectId/profile` with short description → 400. Fixed frontend client-side validation before API call.
+- Anthropic task scoring → 400 `credit balance is too low`. Not fixed in code; requires Anthropic billing/credits.
+- Voyage embeddings → 429 reduced-rate-limit/payment-method message. Not fixed in code; requires Voyage billing/rate-limit action.
+- Profile GET 404 `Profile not found — use PUT to create it first`. Expected empty-state behavior, no code fix.
+- n8n warning: Python task runner missing. Deployment/config warning, not an app code bug.
+
+**Files changed**
+- `apps/api/entrypoint.sh` — ensure pgvector knowledge schema after Prisma `db push`.
+- `apps/api/src/routes/tasks.ts` — remove invalid `$transaction` on transaction client.
+- `apps/api/src/routes/approvals.ts` — remove invalid `$transaction` on transaction client.
+- `apps/api/src/routes/feedback.ts` — remove invalid `$transaction` on transaction client.
+- `apps/api/src/routes/knowledge.ts` — cast raw `id` parameter to UUID in embedding updates.
+- `apps/frontend/src/app/projects/[id]/profile/page.tsx` — valid TOV enum options and min description client validation.
+- `AGENTS_CHAT.md` — this report.
+
+**Validation**
+- `npx tsc --noEmit -p apps/frontend/tsconfig.json 2>&1 | head -20` — pass, no output.
+- `npx tsc --noEmit -p apps/api/tsconfig.json 2>&1 | head -10` — pass, no output.
+- `npx vitest run --config vitest.config.ts 2>&1 | tail -5` — pass, 10 files / 127 tests.
+- `bash -n apps/api/entrypoint.sh && echo "shell syntax OK"` — pass.
+- `docker compose build api frontend` — pass.
+- `docker compose up -d api frontend` — pass; API healthy, frontend started.
+
+**Curl / runtime verification**
+- Before fix: task list status `500`; after fix: `GET /api/projects/baf43845-d396-4177-9ac7-25ff12d7a1cd/tasks?pageSize=20` → `200`.
+- Bug 1: `PUT /api/projects/baf43845-d396-4177-9ac7-25ff12d7a1cd/profile` with `tov:"OFFICIAL"` → `OK`.
+- Bug 2: API still correctly rejects `description:"short"` with `Validation failed`; frontend now blocks this before `apiFetch`.
+- Knowledge search before fix status `500`; after fix: `GET /api/projects/baf43845-d396-4177-9ac7-25ff12d7a1cd/knowledge/search?q=oil` → `200`.
+- DB verification: `knowledge_items.embedding` column count → `1`.
+- `curl -s http://localhost:3002 | head -5` → `/login`.
+- API logs after rebuild show no new `tx.$transaction`, missing `embedding`, UUID cast, or `statusCode":500` errors from the verification requests.
+
+**Notes for Claude**
+- Did not edit `WORKPLAN.md` because the user explicitly forbade it.
+- Existing unrelated dirty files were left untouched and not staged.
+- Remaining external-provider failures need billing/config review, not code changes.
+
 ## Wave 13 → Codex — DONE
 
 **Branch:** `agent/hardening-v7`

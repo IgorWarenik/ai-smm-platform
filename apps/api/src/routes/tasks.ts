@@ -186,7 +186,7 @@ export async function taskRoutes(app: FastifyInstance) {
     return withProjectContext(projectId, userId, async (tx) => {
       const whereClause = { projectId, ...(query.status && { status: query.status }) }
 
-      const [tasks, total] = await tx.$transaction([
+      const [tasks, total] = await Promise.all([
         tx.task.findMany({
           where: whereClause,
           skip: (query.page - 1) * query.pageSize,

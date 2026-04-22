@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api'
 
-const TOV_OPTIONS = ['FORMAL', 'FRIENDLY', 'EXPERT', 'CASUAL', 'INSPIRATIONAL']
+const TOV_OPTIONS = ['OFFICIAL', 'FRIENDLY', 'EXPERT', 'PROVOCATIVE']
 
 type Profile = {
   companyName: string
@@ -54,6 +54,13 @@ export default function ProfilePage() {
     setSaving(true)
     setError('')
     setSuccess('')
+
+    if (form.description.trim().length < 10) {
+      setError('Description must be at least 10 characters')
+      setSaving(false)
+      return
+    }
+
     try {
       const { data } = await apiFetch<{ data: Profile }>(`/api/projects/${projectId}/profile`, {
         method: 'PUT',

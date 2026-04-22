@@ -21,7 +21,7 @@ export async function feedbackRoutes(app: FastifyInstance) {
       const task = await tx.task.findFirst({ where: { id: taskId, projectId } })
       if (!task) return reply.notFound('Task not found')
 
-      const [items, total] = await tx.$transaction([
+      const [items, total] = await Promise.all([
         tx.agentFeedback.findMany({
           where: { taskId, projectId },
           skip: (query.page - 1) * query.pageSize,

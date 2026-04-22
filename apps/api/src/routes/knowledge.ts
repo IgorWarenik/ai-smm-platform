@@ -50,7 +50,7 @@ export async function knowledgeRoutes(app: FastifyInstance) {
       .then(async (vector) => {
         await withProjectContext(projectId, serviceUserId, async (tx) => {
           await tx.$executeRawUnsafe(
-            `UPDATE knowledge_items SET embedding = $1::vector WHERE id = $2 AND project_id = $3::uuid`,
+            `UPDATE knowledge_items SET embedding = $1::vector WHERE id = $2::uuid AND project_id = $3::uuid`,
             `[${vector.join(',')}]`,
             item.id,
             projectId
@@ -214,7 +214,7 @@ export async function knowledgeRoutes(app: FastifyInstance) {
           .then(async (vector) => {
             await withProjectContext(projectId, serviceUserId, async (ctx) => {
               await ctx.$executeRawUnsafe(
-                `UPDATE knowledge_items SET embedding = $1::vector WHERE id = $2 AND project_id = $3::uuid`,
+                `UPDATE knowledge_items SET embedding = $1::vector WHERE id = $2::uuid AND project_id = $3::uuid`,
                 `[${vector.join(',')}]`,
                 itemId,
                 projectId
