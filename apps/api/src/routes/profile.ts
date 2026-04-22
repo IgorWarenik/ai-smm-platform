@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto'
 import type { FastifyInstance } from 'fastify'
 import { prisma, withProjectContext } from '@ai-marketing/db'
 import { CreateProjectProfileSchema, UpdateProjectProfileSchema } from '@ai-marketing/shared'
@@ -39,7 +40,7 @@ export async function profileRoutes(app: FastifyInstance) {
     return withProjectContext(projectId, userId, async (tx) => {
       const profile = await tx.projectProfile.upsert({
         where: { projectId },
-        create: { projectId, ...body },
+        create: { id: randomUUID(), projectId, ...body },
         update: body,
       })
       return reply.send({ data: profile })
