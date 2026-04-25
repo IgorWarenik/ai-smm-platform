@@ -3,15 +3,12 @@
 
 **Stack:** Next.js 14 + App Router + TypeScript + Tailwind CSS.
 
-**Rules:**
-- New branch from main: `git checkout -b agent/frontend-v6`
-- Work ONLY in `apps/frontend/src/` — no other directories
-- Do NOT run npm install or npx — just write TypeScript/TSX files
-- Do NOT merge — Claude reviews
-- On finish: write report to `AGENTS_CHAT.md` under `## Wave 9 → Gemini`
-- Validation: `npx tsc --noEmit -p apps/frontend/tsconfig.json` — zero errors
+**⛔ WAVE 9 ЗАВЕРШЁН. Новых задач нет. Не действуй до следующего брифа.**
 
-**IMPORTANT:** Files you create or modify MUST be at their EXACT path in `apps/frontend/src/`. Do NOT create files in the repo root.
+**Критическое правило (нарушалось каждую волну):**
+- **НЕ редактируй `AGENTS_CHAT.md` напрямую в main.** Этот файл — только через branch + PR. Любая прямая запись в него на main перезаписывает работу Claude и других агентов.
+- **НЕ коммить в main напрямую.** Всегда создавай ветку `agent/frontend-vN` от main.
+- **НЕ удаляй и не переписывай код из предыдущих волн.** Wave 8 delete button был удалён в твоём Wave 9 PR — это регрессия.
 
 ---
 

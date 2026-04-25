@@ -76,7 +76,12 @@ export async function apiFetch<T = unknown>(
 
     if (!res.ok) {
         const error = await res.json().catch(() => ({ error: 'Request failed' }))
-        throw Object.assign(new Error(error.error ?? 'Request failed'), { status: res.status, code: error.code })
+        const message = error.message ?? error.error ?? 'Request failed'
+        throw Object.assign(new Error(message), {
+            status: res.status,
+            code: error.code,
+            details: error.details,
+        })
     }
 
     if (res.status === 204) return undefined as T

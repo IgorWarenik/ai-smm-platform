@@ -31,51 +31,56 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="max-w-5xl mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-2xl font-semibold">Projects</h1>
-          {user && <p className="text-sm text-gray-500">{user.email}</p>}
-        </div>
-        <div className="flex gap-3">
-          <Link href="/projects/new"
-            className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700">
-            New Project
-          </Link>
-          <button onClick={handleLogout}
-            className="border px-4 py-2 rounded text-sm font-medium hover:bg-gray-50">
-            Logout
-          </button>
-        </div>
-      </div>
-      {loading ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {[1, 2, 3].map(i => (
-            <div key={i} className="animate-pulse border rounded-lg p-4 bg-white">
-              <div className="h-5 bg-gray-200 rounded w-3/4 mb-2" />
-              <div className="h-3 bg-gray-100 rounded w-full" />
-              <div className="h-3 bg-gray-100 rounded w-2/3 mt-1" />
-            </div>
-          ))}
-        </div>
-      ) : projects.length === 0 ? (
-        <p className="text-gray-500">No projects yet. Create your first one.</p>
-      ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {projects.map((p) => (
-            <Link key={p.id} href={`/projects/${p.id}`}
-              className="block border rounded-lg p-4 hover:shadow-md transition-shadow bg-white">
-              <h2 className="font-semibold text-lg">{p.name}</h2>
-              {p.description && (
-                <p className="text-sm text-gray-500 mt-1 line-clamp-2">{p.description}</p>
-              )}
-              {p._count !== undefined && (
-                <p className="text-xs text-gray-400 mt-2">{p._count.tasks} task{p._count.tasks !== 1 ? 's' : ''}</p>
-              )}
+    <div className="space-page">
+      <div className="space-container-wide">
+        <div className="space-nav mb-10 !mx-0 !w-full">
+          <div>
+            <p className="eyebrow">Mission Control</p>
+            <h1 className="text-2xl font-bold">Projects</h1>
+            {user && <p className="muted-text text-sm">{user.email}</p>}
+          </div>
+          <div className="ml-auto flex gap-3">
+            <Link href="/projects/new" className="btn-primary">
+              New Project
             </Link>
-          ))}
+            <button onClick={handleLogout} className="btn-secondary">
+              Logout
+            </button>
+          </div>
         </div>
-      )}
+        {loading ? (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {[1, 2, 3].map(i => (
+              <div key={i} className="glass-panel animate-pulse p-5">
+                <div className="mb-3 h-5 w-3/4 rounded bg-white/15" />
+                <div className="h-3 w-full rounded bg-white/10" />
+                <div className="mt-2 h-3 w-2/3 rounded bg-white/10" />
+              </div>
+            ))}
+          </div>
+        ) : projects.length === 0 ? (
+          <div className="glass-panel p-8 text-center">
+            <p className="section-title">No projects yet</p>
+            <p className="muted-text mt-2">Create your first AI marketing workspace.</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {projects.map((p) => (
+              <Link key={p.id} href={`/projects/${p.id}`}
+                className="glass-panel block p-5 hover:border-indigo-300/50">
+                <p className="eyebrow mb-2">Campaign Node</p>
+                <h2 className="text-xl font-bold text-white">{p.name}</h2>
+                {p.description && (
+                  <p className="muted-text mt-2 line-clamp-2 text-sm">{p.description}</p>
+                )}
+                {p._count !== undefined && (
+                  <p className="status-pill mt-5">{p._count.tasks} task{p._count.tasks !== 1 ? 's' : ''}</p>
+                )}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

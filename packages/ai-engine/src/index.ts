@@ -1,4 +1,5 @@
 export { runAgent, runAgentStreaming } from './claude'
+export type { ModelProvider } from './claude'
 export { embedBatch, EMBEDDING_DIMENSIONS, embedText } from './embeddings'
 export { buildContentMakerIterationPrompt, buildContentMakerPrompt } from './prompts/content-maker'
 export { buildEvaluatorPrompt, parseEvaluatorResult } from './prompts/evaluator'
@@ -29,4 +30,3 @@ export type {
   TokenProvider,
   TokenUsage
 } from './token-monitor'
-

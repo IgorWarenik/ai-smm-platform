@@ -27,28 +27,32 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="bg-white p-8 rounded-lg shadow w-full max-w-md">
-        <h1 className="text-2xl font-semibold mb-6">Sign In</h1>
+    <div className="space-page flex items-center justify-center px-4 py-10">
+      <div className="glass-panel w-full max-w-md p-8">
+        <div className="mb-8 text-center">
+          <p className="eyebrow">AI Marketing Platform</p>
+          <h1 className="mt-2 text-4xl font-bold">Sign In</h1>
+          <p className="muted-text mt-2 text-sm">Enter the command deck.</p>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
+            <label className="field-label">Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="field" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Password</label>
+            <label className="field-label">Password</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} required
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="field" />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-rose-300">{error}</p>}
           <button type="submit" disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50">
+            className="btn-primary w-full">
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
-          <p className="text-sm text-center">
+          <p className="muted-text text-center text-sm">
             No account?{' '}
-            <Link href="/register" className="text-blue-600 hover:underline">Register</Link>
+            <Link href="/register" className="font-bold text-cyan-200 hover:text-white">Register</Link>
           </p>
         </form>
       </div>

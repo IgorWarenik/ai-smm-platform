@@ -6,9 +6,9 @@ function uniqueEmail() {
 
 async function loginNew(page: Parameters<Parameters<typeof test>[1]>[0]) {
   await page.goto('/register')
-  await page.getByLabel('Name').fill('E2E Tester')
-  await page.getByLabel('Email').fill(uniqueEmail())
-  await page.getByLabel('Password').fill('password123!')
+  await page.locator('input[type="text"]').fill('E2E Tester')
+  await page.locator('input[type="email"]').fill(uniqueEmail())
+  await page.locator('input[type="password"]').fill('password123!')
   await page.getByRole('button', { name: 'Register' }).click()
   await page.waitForURL('/dashboard')
 }
@@ -29,10 +29,8 @@ test.describe('Projects', () => {
     await page.getByPlaceholder('My Marketing Campaign').fill(projectName)
     await page.getByRole('button', { name: 'Create Project' }).click()
 
-    // redirects to project tasks page
     await page.waitForURL(/\/projects\/[0-9a-f-]+$/)
 
-    // back to dashboard — project should appear
     await page.goto('/dashboard')
     await expect(page.getByText(projectName)).toBeVisible()
   })

@@ -31,6 +31,7 @@ Run a non-mutating discovery pass:
   - `context/`
   - `.cavekit/`
 - Find manifests and build config:
+  - Treat these as examples; not every repository will use every ecosystem.
   - `package.json`
   - `pnpm-workspace.yaml`
   - `turbo.json`
@@ -185,6 +186,8 @@ If an MCP is configured but not active in the current chat, say that clearly and
   - `npm run test`
   - `npm run typecheck`
   - `npm run build`
+  - `npx tsc --noEmit -p <tsconfig-path>`
+  - `npx vitest run --config <vitest-config>`
   - `pnpm test`
   - `pnpm typecheck`
   - `pytest`
@@ -207,7 +210,7 @@ Update docs in parallel with code:
 
 Add comments/docstrings where they help future agents:
 
-- public functions/classes/modules in Python should have type hints and docstrings when the repo style expects it;
+- Python helpers should have type hints and docstrings when the repo actually uses Python and its local style expects it;
 - TypeScript should use clear interfaces/types and names;
 - comment non-obvious business rules, security constraints, token-economy choices, concurrency constraints, and workflow handoff logic;
 - avoid comments that merely restate obvious code.

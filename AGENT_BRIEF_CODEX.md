@@ -1,368 +1,175 @@
 # Agent Brief — Codex
-## Wave 13 | Branch: `agent/hardening-v7`
+## Wave 14 | Branch: `agent/bugfix-v1`
 
-**Three tasks. All mandatory. All on same branch.**
+**Goal:** Autonomous production error collection and fixing.
+Collect errors from the running Docker stack, reproduce them, fix the root cause, validate.
 
 **Rules:**
-- Branch from main: `git checkout -b agent/hardening-v7`
-- Touch ONLY files listed per task
-- Do NOT touch tests, schemas, or workflow files
+- Branch from main: `git checkout -b agent/bugfix-v1`
+- Touch ONLY files relevant to each fix
+- Do NOT touch `apps/api/src/routes/auth.ts` or Prisma schema
 - Do NOT merge — Claude reviews
-- On finish: commit all, write report to `AGENTS_CHAT.md` under `## Wave 13 → Codex`
+- On finish: commit all, write report to `AGENTS_CHAT.md` under `## Wave 14 → Codex`
 
 ---
 
-## Task 1 — Prisma UUID fix (all create calls)
+## Context — Running Stack
 
-**Problem:** Prisma 5 `@default(dbgenerated("gen_random_uuid()")) @db.Uuid` generates CUID2
-client-side under ts-node instead of letting the DB generate a UUID. The runtime then
-validates the CUID2 against `@db.Uuid` and throws P2023. We already fixed `refreshToken.create`
-in a prior wave; now fix ALL remaining `.create()` calls in `apps/api/src/routes/`.
+Docker Compose is running on non-standard ports:
 
-**Fix pattern:** add `id: randomUUID()` as the first field in every `data:` object where:
-1. The model ID is `@db.Uuid` (all models in this repo are), AND
-2. No explicit `id` is currently passed
+| Service | Container | Port |
+|---------|-----------|------|
+| Fastify API | `ai-marketing-api` | http://localhost:3001 |
+| Next.js Frontend | `ai-marketing-frontend` | http://localhost:3002 |
+| n8n | `ai-marketing-n8n` | http://localhost:5678 |
+| PostgreSQL | `ai-marketing-postgres` | localhost:5432 |
+| Redis | `ai-marketing-redis` | localhost:6380 |
 
-`randomUUID` is already imported in `apps/api/src/routes/auth.ts`. Add it to the other files.
+Test user: `igorwarenik@gmail.com` / `Admin1234!`
 
-### Files to edit
+---
 
-#### `apps/api/src/routes/projects.ts`
-Add `import { randomUUID } from 'crypto'` at top.
+## Step 1 — Collect Errors
 
-In `project.create({ data: { ... } })` (line ~30):
-```typescript
-const project = await prisma.project.create({
-  data: {
-    id: randomUUID(),        // ← add
-    ownerId: userId,
-    name: body.name,
-    settings: body.settings ?? {},
-    members: {
-      create: {
-        id: randomUUID(),    // ← add (ProjectMember nested create)
-        userId,
-        role: MemberRole.OWNER,
-      },
-    },
-  },
-})
-```
+Run these commands to extract production errors:
 
-Also find `projectMember.create` if any exists (e.g. in invite/add-member route) and add `id: randomUUID()` there too.
-
-#### `apps/api/src/routes/tasks.ts`
-Add `import { randomUUID } from 'crypto'` at top (if not present).
-
-`task.create` (line ~64):
-```typescript
-return tx.task.create({
-  data: {
-    id: randomUUID(),   // ← add
-    projectId,
-    input: body.input,
-    score: scoring.score,
-    scenario: scoring.isValid ? (scoring.scenario as ScenarioType) : null,
-    status,
-    clarificationNote,
-    ...(status === TaskStatus.REJECTED && { rejectedAt: new Date() }),
-  },
-})
-```
-
-`execution.create` (line ~326):
-```typescript
-const exec = await tx.execution.create({
-  data: {
-    id: randomUUID(),   // ← add
-    taskId,
-    projectId,
-    scenario,
-    status: ExecutionStatus.RUNNING,
-  },
-})
-```
-
-#### `apps/api/src/routes/approvals.ts`
-Add `import { randomUUID } from 'crypto'` at top.
-
-`approval.create` (line ~67):
-```typescript
-const approval = await tx.approval.create({
-  data: {
-    id: randomUUID(),   // ← add
-    projectId,
-    taskId,
-    decision: body.decision,
-    comment: body.comment,
-    iteration,
-    decidedById: userId,
-  },
-})
-```
-
-#### `apps/api/src/routes/callback.ts`
-Add `import { randomUUID } from 'crypto'` at top.
-
-`agentOutput.create` (line ~126):
-```typescript
-await tx.agentOutput.create({
-  data: {
-    id: randomUUID(),   // ← add
-    executionId: body.executionId,
-    agentType: body.agentType as AgentType,
-    output: body.output,
-    iteration: body.iteration,
-    evalScore: body.evalScore ?? null,
-  },
-})
-```
-
-#### `apps/api/src/routes/feedback.ts`
-Add `import { randomUUID } from 'crypto'` at top.
-
-`agentFeedback.create` (line ~53):
-```typescript
-const feedback = await tx.agentFeedback.create({
-  data: {
-    id: randomUUID(),   // ← add
-    projectId,
-    taskId,
-    agentType: body.agentType,
-    score: body.score,
-    comment: body.comment,
-  },
-})
-```
-
-#### `apps/api/src/routes/knowledge.ts`
-Add `import { randomUUID } from 'crypto'` at top.
-
-`knowledgeItem.create` (line ~34):
-```typescript
-return tx.knowledgeItem.create({
-  data: {
-    id: randomUUID(),   // ← add
-    projectId,
-    category: body.category,
-    content: body.content,
-    metadata: body.metadata ?? {},
-  },
-})
-```
-
-#### `apps/api/src/routes/auth.ts`
-`user.create` (line ~46) — add `id: randomUUID()`:
-```typescript
-const user = await prisma.user.create({
-  data: {
-    id: randomUUID(),   // ← add
-    email: body.email,
-    passwordHash,
-    name: body.name ?? null,
-  },
-})
-```
-(`randomUUID` already imported here from prior fix.)
-
-**Validation:**
 ```bash
-npx tsc --noEmit -p apps/api/tsconfig.json 2>&1 | head -5
-# must produce 0 output (no errors)
+# API errors (4xx / 5xx)
+docker logs ai-marketing-api 2>&1 | grep -E '"statusCode":(4|5)[0-9]{2}' | tail -40
+
+# API stderr
+docker logs ai-marketing-api 2>&1 | grep -iE 'error|fail|exception|prisma' | tail -40
+
+# Frontend build/runtime errors
+docker logs ai-marketing-frontend 2>&1 | grep -iE 'error|warn' | tail -20
+
+# n8n errors
+docker logs ai-marketing-n8n 2>&1 | grep -iE 'error|fail' | tail -20
+```
+
+Catalog every unique error with: endpoint, status code, error message.
+
+---
+
+## Step 2 — Known Bugs to Fix
+
+### Bug 1 — Profile PUT 400: ToneOfVoice enum mismatch (FIXED by Claude in Wave 14 pre-brief)
+
+**Root cause already fixed:** `apps/frontend/src/app/projects/[id]/profile/page.tsx`
+`TOV_OPTIONS` was `['FORMAL', 'FRIENDLY', 'EXPERT', 'CASUAL', 'INSPIRATIONAL']` — three values
+that don't exist in the `ToneOfVoice` enum (`OFFICIAL | FRIENDLY | EXPERT | PROVOCATIVE`).
+Claude already patched this. **Verify the fix is committed. If not, apply it:**
+
+```typescript
+// apps/frontend/src/app/projects/[id]/profile/page.tsx  line 6
+const TOV_OPTIONS = ['OFFICIAL', 'FRIENDLY', 'EXPERT', 'PROVOCATIVE']
+```
+
+**Verify fix works:**
+```bash
+curl -s -X PUT http://localhost:3001/api/projects/<any-project-id>/profile \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"companyName":"Test Co","description":"Test description min 10","niche":"Tech","tov":"OFFICIAL"}' \
+  | jq '.error // "OK"'
+# must return "OK" or profile data, not validation error
+```
+
+### Bug 2 — Profile PUT 400: `description` too short
+
+**Problem:** `CreateProjectProfileSchema` requires `description: z.string().min(10)`.
+Frontend HTML `required` attribute does not enforce minimum length.
+If user types fewer than 10 chars, API returns 400.
+
+**Fix:** Add client-side validation in the frontend form.
+
+File: `apps/frontend/src/app/projects/[id]/profile/page.tsx`
+
+In `handleSave`, before the `apiFetch` call, add validation:
+```typescript
+const handleSave = async (e: React.FormEvent) => {
+  e.preventDefault()
+  setSaving(true)
+  setError('')
+  setSuccess('')
+
+  // client-side validation
+  if (form.description.trim().length < 10) {
+    setError('Description must be at least 10 characters')
+    setSaving(false)
+    return
+  }
+
+  try {
+    // ... existing apiFetch code
+```
+
+### Bug 3 — Any other 4xx/5xx errors found in Step 1
+
+For each unique error you find in docker logs:
+
+1. Identify the route and reproduce with curl
+2. Find root cause: schema mismatch, missing field, wrong enum, prisma error
+3. Fix in the relevant file (`apps/api/src/routes/*.ts` or `apps/frontend/src/**/*.tsx`)
+4. Verify with curl or unit test
+
+**Schema locations:**
+- API Zod schemas: `packages/shared/src/schemas.ts`
+- Prisma enums: `packages/db/prisma/schema.prisma`
+- Route handlers: `apps/api/src/routes/`
+- Frontend API calls: `apps/frontend/src/`
+
+**Common fix patterns:**
+- Enum mismatch → align frontend constants with `packages/db/prisma/schema.prisma` enums
+- Field missing in request body → check schema default, add to frontend form
+- UUID not generated → ensure `id: randomUUID()` in every `.create()` call (Wave 13 fix)
+- Prisma P2025 (not found) → check membership guard returns 404 not 500
+
+---
+
+## Step 3 — Frontend TypeScript Sync
+
+After any frontend fix, run:
+```bash
+cd /repo
+npx tsc --noEmit -p apps/frontend/tsconfig.json 2>&1 | head -20
+# must show 0 errors
 ```
 
 ---
 
-## Task 2 — API entrypoint script (run migrations on container start)
-
-**Problem:** `apps/api/Dockerfile` starts directly with `node`. When Docker Compose
-spins up a fresh postgres, the DB has no tables. API must run `prisma migrate deploy`
-(or `db push` for dev) before starting.
-
-**Note:** Schema uses `dbgenerated("gen_random_uuid()")` and `pgvector`. The Docker
-postgres image (`pgvector/pgvector:pg16`) has both `gen_random_uuid()` and `vector`
-extension available. Migration command: `prisma db push` (no migration history, just push).
-
-### File to create: `apps/api/entrypoint.sh`
+## Step 4 — API TypeScript + Tests
 
 ```bash
-#!/bin/sh
-set -e
+npx tsc --noEmit -p apps/api/tsconfig.json 2>&1 | head -10
+# must show 0 errors
 
-echo "Running database schema sync..."
-node -e "
-const { execSync } = require('child_process');
-execSync(
-  'npx prisma db push --schema packages/db/prisma/schema.prisma --accept-data-loss --skip-generate',
-  { stdio: 'inherit', cwd: '/repo' }
-);
-" || echo "Warning: prisma db push failed, continuing..."
-
-echo "Starting API..."
-exec node apps/api/dist/apps/api/src/index.js
-```
-
-### File to edit: `apps/api/Dockerfile`
-
-In the `runner` stage, replace:
-```dockerfile
-CMD ["node", "apps/api/dist/apps/api/src/index.js"]
-```
-with:
-```dockerfile
-COPY --chown=appuser:nodejs apps/api/entrypoint.sh ./entrypoint.sh
-RUN chmod +x ./entrypoint.sh
-CMD ["./entrypoint.sh"]
-```
-
-Also add `prisma` binary to runner — it's needed for `prisma db push`:
-```dockerfile
-# After the existing COPY --from=deps lines, add:
-COPY --from=deps --chown=appuser:nodejs /repo/apps/api/node_modules/.bin/prisma ./apps/api/node_modules/.bin/prisma
-COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules/.bin/prisma ./packages/db/node_modules/.bin/prisma
-```
-
-Actually simpler — add `npx` approach is already shell-based. Just ensure `prisma` CLI is
-available. In `deps` stage, `packages/db` installs prisma as devDependency so
-`packages/db/node_modules/.bin/prisma` exists. In runner, copy it:
-
-In runner stage, add after existing COPY lines:
-```dockerfile
-COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules/.bin ./packages/db/node_modules/.bin
-COPY --from=deps --chown=appuser:nodejs /repo/packages/db/node_modules/prisma ./packages/db/node_modules/prisma
-```
-
-Then update entrypoint.sh to call prisma directly:
-```bash
-#!/bin/sh
-set -e
-echo "Syncing DB schema..."
-./packages/db/node_modules/.bin/prisma db push \
-  --schema packages/db/prisma/schema.prisma \
-  --accept-data-loss \
-  --skip-generate 2>&1 || echo "Warning: schema sync failed, continuing"
-echo "Starting API..."
-exec node apps/api/dist/apps/api/src/index.js
-```
-
-**Validation:**
-```bash
-# Syntax check only — no Docker daemon needed:
-bash -n apps/api/entrypoint.sh && echo "shell syntax OK"
-grep "entrypoint" apps/api/Dockerfile && echo "Dockerfile updated"
+npx vitest run --config vitest.config.ts 2>&1 | tail -5
+# must show 127 passed (or more if you add tests)
 ```
 
 ---
 
-## Task 3 — GitHub Actions CI
+## Step 5 — Rebuild Frontend Docker Image
 
-### File to create: `.github/workflows/ci.yml`
-
-```yaml
-name: CI
-
-on:
-  push:
-    branches: [main, 'agent/**']
-  pull_request:
-    branches: [main]
-
-jobs:
-  test:
-    name: Type-check & Unit tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: |
-            apps/api/package-lock.json
-            packages/shared/package-lock.json
-            packages/db/package-lock.json
-            packages/ai-engine/package-lock.json
-
-      - name: Install dependencies
-        run: |
-          npm install --prefix packages/shared
-          npm install --prefix packages/db
-          npm install --prefix packages/ai-engine
-          npm install --prefix apps/api
-
-      - name: Generate Prisma client
-        run: npx prisma generate --schema packages/db/prisma/schema.prisma
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
-
-      - name: Type-check API
-        run: npx tsc --noEmit -p apps/api/tsconfig.json
-
-      - name: Unit tests
-        run: npx vitest run --config vitest.config.ts
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/test
-          JWT_SECRET: ci-secret-32-chars-minimum-length
-          JWT_REFRESH_SECRET: ci-refresh-secret-32-chars-minimum!
-          INTERNAL_API_TOKEN: ci-internal-token
-          ANTHROPIC_API_KEY: dummy
-          VOYAGE_API_KEY: dummy
-          N8N_WEBHOOK_URL: http://localhost:5678/webhook
-          N8N_API_KEY: dummy
-          API_BASE_URL: http://localhost:3001
-          PORT: '3001'
-          HOST: '0.0.0.0'
-          FRONTEND_URL: http://localhost:3000
-
-  typecheck-frontend:
-    name: Type-check Frontend
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-          cache: 'npm'
-          cache-dependency-path: apps/frontend/package-lock.json
-
-      - name: Install dependencies
-        run: npm install --prefix apps/frontend
-
-      - name: Type-check Frontend
-        run: npx tsc --noEmit -p apps/frontend/tsconfig.json
-```
-
-**Note:** Unit tests mock the DB, so no real postgres needed for CI. `DATABASE_URL` is a
-dummy value used only for Prisma client generation at generate time.
-
-Check existing `vitest.config.ts` to confirm test command is correct:
+After any frontend change, rebuild container so changes take effect:
 ```bash
-head -10 vitest.config.ts
+docker compose build frontend && docker compose up -d frontend
 ```
 
-**Validation:**
-```bash
-# YAML syntax check:
-node -e "require('fs').readFileSync('.github/workflows/ci.yml', 'utf8')" && echo "YAML readable"
-# Confirm jobs present:
-grep "name: CI\|jobs:\|unit tests\|typecheck" .github/workflows/ci.yml
-```
+Wait 15s, then verify: `curl -s http://localhost:3002 | head -5`
 
 ---
 
-## How to submit
+## Reporting
 
-1. `git checkout -b agent/hardening-v7` from main
-2. Complete all three tasks
-3. Run validations listed per task
-4. `npx tsc --noEmit -p apps/api/tsconfig.json` — must produce 0 errors
-5. `npx vitest run --config vitest.config.ts 2>&1 | tail -5` — must show 127 passed
-6. Commit: `feat(hardening): prisma UUID fix all routes, entrypoint migrations, CI`
-7. Write report to `AGENTS_CHAT.md` under `## Wave 13 → Codex`:
-   - List every file changed
-   - Paste tsc + vitest results
-8. Tell human "done, agent/hardening-v7 ready for review"
+Commit message: `fix(bugfix-v1): production error fixes Wave 14`
+
+Write to `AGENTS_CHAT.md` under `## Wave 14 → Codex`:
+- List every bug found in docker logs (even unfixed ones, with reason)
+- List every file changed with one-line description
+- Paste tsc + vitest results
+- Paste curl verification results for Bug 1 and Bug 2
+- Note any bugs that need Claude review
+
+Tell human: "done, agent/bugfix-v1 ready for review"

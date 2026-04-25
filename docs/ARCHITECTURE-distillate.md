@@ -10,14 +10,14 @@ parts: 1
 ---
 
 ## System Shape
-- Client layer: Web Browser and Mobile App call Fastify API.
+- Client layer: web browser calls Fastify API.
 - API gateway: `apps/api` Fastify Node.js service; async HTTP API; TypeScript monorepo; native SSE; shared types with frontend.
 - AI orchestration layer: `apps/workflows`; n8n workflow engine; scenarios stored as version-controlled TypeScript files.
 - AI agents: Marketer, Content Maker, Evaluator.
-- AI services: Claude API by Anthropic for reasoning/strategy/content/evaluation; Voyage AI embeddings for semantic search.
+- AI services: selected model provider (Claude, DeepSeek, ChatGPT/OpenAI, or Gemini) for generation and evaluation; Voyage AI embeddings for semantic search.
 - Data layer: PostgreSQL 16 + pgvector; Redis cache and n8n queue backend; MinIO object storage.
-- Primary flow: client -> Fastify -> n8n -> scenario workflow -> agents -> Claude; Fastify also talks to Voyage, PostgreSQL, Redis, MinIO.
-- Frontend target: Next.js 14 App Router; Tailwind CSS; shadcn/ui; TypeScript; handles auth, project management, task creation, SSE progress, approval flows.
+- Primary flow: client -> Fastify -> n8n -> scenario workflow -> agents -> selected model provider; Fastify also talks to Voyage, PostgreSQL, Redis, MinIO.
+- Frontend target: Next.js 14 App Router; Tailwind CSS; TypeScript; handles auth, project management, task creation, SSE progress, approval flows.
 
 ## Module Boundaries
 - Modules interact through public contracts: interfaces, TypeScript types, Zod schemas, explicit DTOs.
@@ -26,9 +26,9 @@ parts: 1
 - Always-read context: `specs/README.md`; relevant `specs/*.md`; `docs/CONTEXT.md`; add `docs/agent_protocol.md` only when agent handoff changes.
 
 ## API Gateway
-- Fastify routes: `/api/auth`, `/api/projects`, `/api/projects/:id/profile`, `/api/projects/:id/tasks`, `/api/projects/:id/tasks/:id/approvals`, `/api/projects/:id/tasks/:id/feedback`, `/api/projects/:id/knowledge`, `/api/internal/callback`.
+- Fastify routes: `/api/auth`, `/api/projects`, `/api/projects/:id/profile`, `/api/projects/:id/tasks`, `/api/projects/:id/tasks/:id/approvals`, `/api/projects/:id/tasks/:id/feedback`, `/api/projects/:id/knowledge`, `/api/projects/:id/model-config`, `/api/internal/agent-completion`, `/api/internal/callback`, `/api/internal/execution-complete`.
 - Request validation: Zod on all inputs.
-- Auth: JWT access + refresh tokens; RS256.
+- Auth: JWT access + refresh tokens.
 - Authorization: role-based; `PlatformRole` values SUPER_ADMIN, MANAGER, USER; `MemberRole` values OWNER, MEMBER, VIEWER.
 - Real-time progress: Server-Sent Events; long-lived connections managed in-process with `Map<taskId, senderFn>`.
 - Internal callbacks: `/api/internal/*` requires `INTERNAL_API_TOKEN` header.
@@ -36,16 +36,15 @@ parts: 1
 - API security: Zod validation, JWT auth, role checks, Fastify rate limiting.
 
 ## Task Lifecycle
-- Lifecycle: `PENDING -> [score < 25] -> REJECTED`.
-- Lifecycle: `PENDING -> [25-39] -> AWAITING_CLARIFICATION -> client answers -> re-score`.
-- Lifecycle: `PENDING -> [>= 40] -> QUEUED -> RUNNING -> AWAITING_APPROVAL`.
-- Approval outcomes from `AWAITING_APPROVAL`: `COMPLETED`; `REVISION_REQUESTED` up to 3 times then `QUEUED`; `REJECTED`.
-- Task creation flow: user posts task input; Fastify scores through Claude; Fastify stores task as `PENDING`, `REJECTED`, or `AWAITING_CLARIFICATION`.
+- Lifecycle: `QUEUED -> background scoring -> REJECTED | AWAITING_CLARIFICATION | PENDING`.
+- Lifecycle: `PENDING -> RUNNING -> AWAITING_APPROVAL`.
+- Approval outcomes from `AWAITING_APPROVAL`: `COMPLETED`; `REVISION_REQUESTED` returns task to `QUEUED` until revision cap, then stays `AWAITING_APPROVAL` with manager review required; `REJECTED`.
+- Task creation flow: user posts task input; Fastify stores task as `QUEUED`; background scoring then updates task state and may trigger execution.
 - Execution flow: user posts execute; Fastify loads project profile; Fastify triggers n8n orchestrator webhook with payload plus profile; n8n runs workflow; callbacks store outputs and drive SSE.
 - Completion flow: n8n posts `/internal/execution-complete`; Fastify updates task toward approval state; user posts approval decision; Fastify updates final task status.
 
 ## Orchestration
-- Scenario A: single agent routing, Marketer or Content Maker based on task classification.
+- Scenario A: direct API-driven single-agent execution path.
 - Scenario B: sequential Marketer -> Content Maker; strict JSON handoff defined in `docs/agent_protocol.md`.
 - Scenario C: Marketer and Content Maker run in parallel; results merged.
 - Scenario D: Marketer -> Content Maker -> Evaluator loop; max 3 iterations; manager escalation/approval path after iteration cap per ТЗ §11.4.
@@ -53,10 +52,10 @@ parts: 1
 - n8n finalization: workflow posts to Fastify `/api/internal/execution-complete`.
 - Agent tools: RAG search and knowledge base access are called from n8n Code nodes via HTTP APIs, not direct DB access.
 - Agent errors: caught in n8n and reported back through callback.
-- Workflow Claude rule: n8n must call `POST /api/internal/agent-completion`; direct `api.anthropic.com` calls bypass token counters/limits and are forbidden.
+- Workflow provider rule: n8n must call `POST /api/internal/agent-completion`; direct provider API calls bypass token counters/limits and are forbidden.
 
 ## AI And RAG
-- Claude model: `claude-sonnet-4-6`.
+- Model provider is selected at runtime from project/profile settings and env-backed config.
 - Voyage embeddings: 1024 dimensions; stored in pgvector.
 - Redis embedding cache: repeated Voyage vectors and token savings.
 - RAG search: PostgreSQL pgvector with HNSW index for approximate nearest-neighbor lookup.
@@ -76,13 +75,13 @@ parts: 1
 
 ## Deployment
 - Docker Compose stack: Fastify API, Next.js frontend, n8n Workflow Engine, PostgreSQL 16 + pgvector, Redis, MinIO.
-- External services: Claude API by Anthropic; Voyage AI.
-- Service edges: API -> PostgreSQL/Redis/MinIO/n8n/Claude/Voyage; frontend -> API; n8n -> API; direct n8n -> Claude shown historically but constrained by token-monitoring rule to go through API.
+- External services: selected model provider API; Voyage AI.
+- Service edges: API -> PostgreSQL/Redis/MinIO/n8n/model-provider/Voyage; frontend -> API; n8n -> API; direct n8n -> provider calls are constrained by token-monitoring rules to go through API.
 
 ## Key Decisions
 - API runtime: Node.js + Fastify; reason: TypeScript monorepo, native SSE, shared frontend/backend types.
 - Orchestration: n8n rather than CrewAI/LangChain; reason: visual debugging, webhook-native execution, version-controlled as code.
-- Agent intelligence: Claude API direct; original reason: no abstraction layer needed, direct HTTP in n8n Code nodes; current constraint: direct provider calls must be routed through `/api/internal/agent-completion`.
+- Agent intelligence: provider calls are centralized through shared provider routing and `/api/internal/agent-completion` for workflow-driven steps.
 - Queue backend: Redis + n8n queue mode; reason: avoids Celery/Python dependency.
 - File storage: MinIO; reason: S3-compatible, self-hosted, Docker-friendly.
 - Embeddings: Voyage AI 1024-dim; reason: Russian-language semantic search quality.

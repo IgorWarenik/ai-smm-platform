@@ -22,7 +22,7 @@ export async function approvalRoutes(app: FastifyInstance) {
       const task = await tx.task.findFirst({ where: { id: taskId, projectId } })
       if (!task) return reply.notFound('Task not found')
 
-      const [approvals, total] = await tx.$transaction([
+      const [approvals, total] = await Promise.all([
         tx.approval.findMany({
           where: { taskId, projectId },
           skip: (query.page - 1) * query.pageSize,

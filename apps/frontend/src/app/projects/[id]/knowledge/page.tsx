@@ -74,18 +74,34 @@ export default function KnowledgePage() {
 
     return (
         <div className="space-y-10">
-            <div className="bg-white p-6 border rounded-lg shadow-sm space-y-4">
-                <h2 className="font-semibold">Search Knowledge Base</h2>
-                <div className="flex gap-2">
-                    <input type="text" value={query} onChange={e => setQuery(e.target.value)} placeholder="Semantic search..." className="flex-1 border rounded px-3 py-2 text-sm" />
-                    <button onClick={handleSearch} className="bg-gray-800 text-white px-4 py-2 rounded text-sm hover:bg-black">Search</button>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                    <p className="eyebrow">Semantic memory</p>
+                    <h1 className="page-title mt-2">Knowledge</h1>
+                </div>
+                <p className="muted-text max-w-xl text-sm">
+                    Store brand rules, cases, templates, and channel constraints for retrieval.
+                </p>
+            </div>
+
+            <div className="glass-panel space-y-4 p-6">
+                <h2 className="section-title">Search Knowledge Base</h2>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                    <input
+                        type="text"
+                        value={query}
+                        onChange={e => setQuery(e.target.value)}
+                        placeholder="Semantic search..."
+                        className="field flex-1"
+                    />
+                    <button onClick={handleSearch} className="btn-primary">Search</button>
                 </div>
                 {searchResults && (
-                    <div className="space-y-2 mt-4">
-                        <p className="text-xs font-bold text-gray-400">Search Results</p>
+                    <div className="mt-4 space-y-3">
+                        <p className="eyebrow">Search Results</p>
                         {searchResults.map((r, i) => (
-                            <div key={i} className="text-sm p-3 bg-blue-50 border border-blue-100 rounded">
-                                <span className="text-[10px] font-bold bg-blue-200 px-1 rounded mr-2">{r.category}</span>
+                            <div key={i} className="glass-panel-soft p-4 text-sm leading-6 text-zinc-100">
+                                <span className="status-pill mr-2">{r.category}</span>
                                 {r.content}
                             </div>
                         ))}
@@ -93,55 +109,58 @@ export default function KnowledgePage() {
                 )}
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
                 <div className="space-y-4">
-                    <h2 className="font-semibold">Add New Asset</h2>
-                    <form onSubmit={handleAdd} className="space-y-4 bg-white p-6 border rounded-lg shadow-sm">
+                    <h2 className="section-title">Add New Asset</h2>
+                    <form onSubmit={handleAdd} className="glass-panel space-y-4 p-6">
                         <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Title (Optional)</label>
-                            <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="w-full border rounded px-3 py-2 text-sm" />
+                            <label className="field-label">Title (Optional)</label>
+                            <input type="text" value={title} onChange={e => setTitle(e.target.value)} className="field" />
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Category</label>
-                            <select value={category} onChange={e => setCategory(e.target.value)} className="w-full border rounded px-3 py-2 text-sm">
+                            <label className="field-label">Category</label>
+                            <select value={category} onChange={e => setCategory(e.target.value)} className="field">
                                 {['FRAMEWORK', 'CASE', 'TEMPLATE', 'SEO', 'PLATFORM_SPEC', 'BRAND_GUIDE'].map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                         </div>
                         <div>
-                            <label className="block text-xs font-bold text-gray-400 uppercase mb-1">Content</label>
-                            <textarea value={content} onChange={e => setContent(e.target.value)} required rows={6} className="w-full border rounded px-3 py-2 text-sm" />
+                            <label className="field-label">Content</label>
+                            <textarea value={content} onChange={e => setContent(e.target.value)} required rows={6} className="field min-h-[180px]" />
                         </div>
-                        <button type="submit" disabled={adding} className="w-full bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700">
+                        <button type="submit" disabled={adding} className="btn-primary w-full">
                             {adding ? 'Saving...' : 'Add to Knowledge Base'}
                         </button>
                     </form>
                 </div>
 
                 <div className="space-y-4">
-                    <h2 className="font-semibold">All Assets</h2>
-                    {error && <p className="text-sm text-red-600">{error}</p>}
-                    {loading ? <p className="text-sm text-gray-400">Loading...</p> : (
+                    <div className="flex items-center justify-between">
+                        <h2 className="section-title">All Assets</h2>
+                        <span className="muted-text text-xs">{items.length} items</span>
+                    </div>
+                    {error && <p className="text-sm text-rose-200">{error}</p>}
+                    {loading ? <p className="muted-text text-sm">Loading...</p> : (
                         <div className="space-y-3">
                             {items.map(item => (
-                                <div key={item.id} className="p-4 border rounded-lg bg-white text-sm">
-                                    <span className="text-[10px] font-bold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded uppercase mb-2 inline-block">{item.category}</span>
+                                <div key={item.id} className="glass-panel-soft p-4 text-sm">
+                                    <span className="status-pill mb-3">{item.category}</span>
                                     {editingId === item.id ? (
-                                        <div className="mt-2 space-y-2">
+                                        <div className="mt-2 space-y-3">
                                             <textarea value={editContent} onChange={e => setEditContent(e.target.value)} rows={4}
-                                                className="w-full border rounded px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
-                                            <div className="flex gap-2">
-                                                <button onClick={() => handleEdit(item.id)} className="text-xs bg-blue-600 text-white px-3 py-1 rounded hover:bg-blue-700">Save</button>
-                                                <button onClick={() => setEditingId(null)} className="text-xs border px-3 py-1 rounded hover:bg-gray-50">Cancel</button>
+                                                className="field min-h-[120px]" />
+                                            <div className="flex flex-wrap gap-2">
+                                                <button onClick={() => handleEdit(item.id)} className="btn-primary min-h-9 px-4 text-xs">Save</button>
+                                                <button onClick={() => setEditingId(null)} className="btn-secondary min-h-9 px-4 text-xs">Cancel</button>
                                             </div>
                                         </div>
                                     ) : (
-                                        <p className="text-gray-700 line-clamp-3">{item.content}</p>
+                                        <p className="line-clamp-3 leading-6 text-zinc-200">{item.content}</p>
                                     )}
-                                    <div className="flex gap-3 mt-2">
+                                    <div className="mt-3 flex gap-3">
                                         <button onClick={() => { setEditingId(item.id); setEditContent(item.content) }}
-                                            className="text-xs text-gray-500 hover:text-gray-700">Edit</button>
+                                            className="text-xs font-semibold text-indigo-200 hover:text-white">Edit</button>
                                         <button onClick={() => handleDelete(item.id)}
-                                            className="text-xs text-red-500 hover:text-red-700">Delete</button>
+                                            className="text-xs font-semibold text-rose-200 hover:text-white">Delete</button>
                                     </div>
                                 </div>
                             ))}

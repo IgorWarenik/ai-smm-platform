@@ -87,6 +87,7 @@ describe('POST /api/projects/:projectId/tasks', () => {
     db.$transaction.mockImplementation((ops: any) =>
       Array.isArray(ops) ? Promise.all(ops) : ops(db)
     )
+    mockScoreTask.mockImplementation(() => new Promise(() => {}))
     mockWPC.mockImplementation(async (_pid: string, _uid: string, cb: any) => cb(db))
     app = await buildApp()
   })
@@ -95,18 +96,17 @@ describe('POST /api/projects/:projectId/tasks', () => {
     await app.close()
   })
 
-  it('201 — score ≥ 40 creates PENDING task', async () => {
+  it('201 — creates QUEUED task before background scoring', async () => {
     const token = await getToken(app)
 
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    mockScoreTask.mockResolvedValue({ score: 85, scenario: 'A', reasoning: 'Clear', isValid: true })
     db.task.create.mockResolvedValue({
       id: TASK_ID,
       projectId: PROJECT_ID,
       input: 'Create a comprehensive content strategy for Q1',
-      score: 85,
-      scenario: 'A',
-      status: 'PENDING',
+      score: 0,
+      scenario: null,
+      status: 'QUEUED',
       createdAt: new Date(),
     })
 
@@ -118,26 +118,19 @@ describe('POST /api/projects/:projectId/tasks', () => {
     })
 
     expect(res.statusCode).toBe(201)
-    expect(res.json().data.status).toBe('PENDING')
+    expect(res.json().data.status).toBe('QUEUED')
   })
 
-  it('202 — score 25-39 returns AWAITING_CLARIFICATION with questions', async () => {
+  it('201 — does not wait for clarification scoring', async () => {
     const token = await getToken(app)
 
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    mockScoreTask.mockResolvedValue({
-      score: 30,
-      scenario: 'A',
-      reasoning: 'Too vague',
-      isValid: true,
-      clarificationQuestions: ['Who is your target audience?', 'What is the budget?'],
-    })
     db.task.create.mockResolvedValue({
       id: TASK_ID,
       projectId: PROJECT_ID,
       input: 'Do marketing stuff',
-      score: 30,
-      status: 'AWAITING_CLARIFICATION',
+      score: 0,
+      status: 'QUEUED',
       createdAt: new Date(),
     })
 
@@ -148,24 +141,22 @@ describe('POST /api/projects/:projectId/tasks', () => {
       payload: { input: 'Do marketing stuff for the company' },
     })
 
-    expect(res.statusCode).toBe(202)
+    expect(res.statusCode).toBe(201)
     const body = res.json()
-    expect(body.data.status).toBe('AWAITING_CLARIFICATION')
-    expect(Array.isArray(body.clarificationQuestions)).toBe(true)
-    expect(body.clarificationQuestions.length).toBeGreaterThan(0)
+    expect(body.data.status).toBe('QUEUED')
+    expect(body.clarificationQuestions).toBeUndefined()
   })
 
-  it('422 — score < 25 rejects task', async () => {
+  it('201 — does not wait for rejection scoring', async () => {
     const token = await getToken(app)
 
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    mockScoreTask.mockResolvedValue({ score: 10, scenario: 'A', reasoning: 'Too vague', isValid: false })
     db.task.create.mockResolvedValue({
       id: TASK_ID,
       projectId: PROJECT_ID,
       input: 'Do stuff',
-      score: 10,
-      status: 'REJECTED',
+      score: 0,
+      status: 'QUEUED',
       createdAt: new Date(),
     })
 
@@ -176,8 +167,8 @@ describe('POST /api/projects/:projectId/tasks', () => {
       payload: { input: 'Do stuff for the company campaign' },
     })
 
-    expect(res.statusCode).toBe(422)
-    expect(res.json().code).toBe('TASK_SCORE_TOO_LOW')
+    expect(res.statusCode).toBe(201)
+    expect(res.json().data.status).toBe('QUEUED')
   })
 
   it('404 — non-member cannot create task', async () => {
@@ -224,7 +215,7 @@ describe('POST /api/projects/:projectId/tasks/:taskId/clarify', () => {
     await app.close()
   })
 
-  it('200 — provides answer, rescore → PENDING', async () => {
+  it('200 — provides answer, rescore can keep task awaiting clarification', async () => {
     const token = await getToken(app)
 
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
@@ -234,12 +225,18 @@ describe('POST /api/projects/:projectId/tasks/:taskId/clarify', () => {
       input: 'Do marketing',
       status: 'AWAITING_CLARIFICATION',
     })
-    mockScoreTask.mockResolvedValue({ score: 80, scenario: 'B', reasoning: 'Now clear', isValid: true })
+    mockScoreTask.mockResolvedValue({
+      score: 30,
+      scenario: 'A',
+      reasoning: 'Still needs details',
+      isValid: true,
+      clarificationQuestions: ['What channel should this target?'],
+    })
     db.task.update.mockResolvedValue({
       id: TASK_ID,
       input: 'Do marketing\n\nКлиент уточнил:\nTarget: SMB companies in Russia',
-      score: 80,
-      status: 'PENDING',
+      score: 30,
+      status: 'AWAITING_CLARIFICATION',
     })
 
     const res = await app.inject({
@@ -250,7 +247,7 @@ describe('POST /api/projects/:projectId/tasks/:taskId/clarify', () => {
     })
 
     expect(res.statusCode).toBe(200)
-    expect(res.json().data.status).toBe('PENDING')
+    expect(res.json().data.status).toBe('AWAITING_CLARIFICATION')
   })
 
   it('400 — task not AWAITING_CLARIFICATION', async () => {

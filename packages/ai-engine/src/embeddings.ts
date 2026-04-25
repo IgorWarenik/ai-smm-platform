@@ -10,13 +10,15 @@ import {
   TokenLimitExceededError,
 } from './token-monitor'
 
-const voyage = new VoyageAIClient({
-  apiKey: process.env.VOYAGE_API_KEY ?? '',
-})
-
 const EMBEDDING_DIMENSIONS = 1024
 const EMBEDDING_MODEL = 'voyage-3-lite'
 const CACHE_TTL_SECONDS = Number(process.env.EMBED_CACHE_TTL_SECONDS ?? 86400)
+
+function getVoyageClient() {
+  return new VoyageAIClient({
+    apiKey: process.env.VOYAGE_API_KEY ?? '',
+  })
+}
 
 function getCacheKey(text: string): string {
   const digest = createHash('sha256').update(text).digest('hex')
@@ -71,7 +73,7 @@ export async function embedText(text: string): Promise<number[]> {
     throw err
   })
 
-  const response = await voyage.embed({
+  const response = await getVoyageClient().embed({
     input: text,
     model: EMBEDDING_MODEL,
   })
@@ -139,7 +141,7 @@ export async function embedBatch(texts: string[]): Promise<number[][]> {
         throw err
       })
 
-      const response = await voyage.embed({ input, model: EMBEDDING_MODEL })
+      const response = await getVoyageClient().embed({ input, model: EMBEDDING_MODEL })
       await recordTokenUsage('voyage', {
         ...extractVoyageUsage(response, input),
         model: EMBEDDING_MODEL,

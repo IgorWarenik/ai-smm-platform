@@ -1,21 +1,20 @@
+"""Manual Voyage embedding smoke test.
+
+This file is intentionally Python-only and is not part of the main TypeScript
+runtime or CI path. Run it manually when debugging Voyage connectivity:
+
+    pytest tests/ai_sanity_check.py
+"""
+
 import os
 import time
+
 import pytest
 import voyageai
 
 
 def test_voyage_ai_sanity_check():
-    """
-    Перед любым коммитом, связанным с RAG, запусти pytest tests/ai_sanity_check.py.
-
-    Этот тест проверяет:
-
-    Связь с API Voyage.
-
-    Корректность размерности получаемого вектора.
-
-    Скорость ответа (не более 2 секунд).
-    """
+    """Check Voyage reachability, embedding size, and basic latency."""
     api_key = os.getenv("VOYAGE_API_KEY")
     assert api_key is not None, "VOYAGE_API_KEY not set"
 

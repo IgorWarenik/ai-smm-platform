@@ -28,33 +28,37 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50">
-      <div className="bg-white p-8 rounded-lg shadow w-full max-w-md">
-        <h1 className="text-2xl font-semibold mb-6">Create Account</h1>
+    <div className="space-page flex items-center justify-center px-4 py-10">
+      <div className="glass-panel w-full max-w-md p-8">
+        <div className="mb-8 text-center">
+          <p className="eyebrow">Launch access</p>
+          <h1 className="mt-2 text-4xl font-bold">Create Account</h1>
+          <p className="muted-text mt-2 text-sm">Build campaign systems with AI agents.</p>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Name</label>
+            <label className="field-label">Name</label>
             <input type="text" value={name} onChange={e => setName(e.target.value)} required
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="field" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Email</label>
+            <label className="field-label">Email</label>
             <input type="email" value={email} onChange={e => setEmail(e.target.value)} required
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="field" />
           </div>
           <div>
-            <label className="block text-sm font-medium mb-1">Password</label>
+            <label className="field-label">Password</label>
             <input type="password" value={password} onChange={e => setPassword(e.target.value)} required minLength={8}
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              className="field" />
           </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
+          {error && <p className="text-sm text-rose-300">{error}</p>}
           <button type="submit" disabled={loading}
-            className="w-full bg-blue-600 text-white py-2 rounded font-medium hover:bg-blue-700 disabled:opacity-50">
+            className="btn-primary w-full">
             {loading ? 'Creating account...' : 'Register'}
           </button>
-          <p className="text-sm text-center">
+          <p className="muted-text text-center text-sm">
             Have an account?{' '}
-            <Link href="/login" className="text-blue-600 hover:underline">Sign in</Link>
+            <Link href="/login" className="font-bold text-cyan-200 hover:text-white">Sign in</Link>
           </p>
         </form>
       </div>

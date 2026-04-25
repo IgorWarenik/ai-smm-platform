@@ -12,6 +12,7 @@ import { approvalRoutes } from './routes/approvals'
 import { feedbackRoutes } from './routes/feedback'
 import { knowledgeRoutes } from './routes/knowledge'
 import { callbackRoutes } from './routes/callback'
+import { modelConfigRoutes } from './routes/model-config'
 import { renderTokenPrometheusMetrics } from '@ai-marketing/ai-engine'
 
 export async function buildApp() {
@@ -53,6 +54,7 @@ export async function buildApp() {
   await app.register(approvalRoutes, { prefix: '/api/projects/:projectId/tasks/:taskId/approvals' })
   await app.register(feedbackRoutes, { prefix: '/api/projects/:projectId/tasks/:taskId/feedback' })
   await app.register(knowledgeRoutes, { prefix: '/api/projects/:projectId/knowledge' })
+  await app.register(modelConfigRoutes, { prefix: '/api/projects/:projectId/model-config' })
   await app.register(callbackRoutes, { prefix: '/api/internal' })
 
   // ─── Health ────────────────────────────────────────────────

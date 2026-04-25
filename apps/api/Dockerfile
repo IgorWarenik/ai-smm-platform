@@ -42,7 +42,7 @@ RUN ./apps/api/node_modules/.bin/tsc -p apps/api/tsconfig.json --noEmitOnError f
 FROM node:20-alpine AS runner
 WORKDIR /repo
 
-RUN apk add --no-cache curl && \
+RUN apk add --no-cache curl openssl && \
     addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 appuser
 

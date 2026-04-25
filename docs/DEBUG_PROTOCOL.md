@@ -7,7 +7,7 @@
 - Сначала получи факты: логи, exit code, stack trace, HTTP response body.
 - Для TypeScript/Fastify запускай проверки из ближайшего `package.json`.
 - Для n8n workflow проверяй payload, callback URL и route map в workflow-файле.
-- Для Python scripts/tests используй `pytest` только если Python-файлы реально затронуты.
+- Для Python scripts/tests используй `pytest` только для ручного `tests/ai_sanity_check.py` или если сознательно меняешь Python helper.
 
 ## 2. Цикл
 1. Extract: сохрани полный текст ошибки.
