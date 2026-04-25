@@ -1,292 +1,312 @@
 # AI Marketing Platform
 
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.104.0-green.svg)](https://fastapi.tiangolo.com/)
-[![CrewAI](https://img.shields.io/badge/CrewAI-0.30.0-orange.svg)](https://www.crewai.com/)
+AI Marketing Platform is a local-first marketing automation workbench. It combines a Next.js frontend, a Fastify API, PostgreSQL with pgvector, Redis, n8n workflows, MinIO storage, and Prometheus metrics.
 
-AI-powered marketing platform that orchestrates intelligent agents to automate content creation and marketing strategy development.
+The product lets a user create projects, configure a model provider, create marketing tasks, review generated output, request revisions, and manage project knowledge for RAG.
 
-## 🚀 Features
+## Current Stack
 
-- **Multi-Agent AI Orchestration**: CrewAI-powered agents for marketing strategy and content creation
-- **Semantic Search**: Voyage AI embeddings with pgvector for intelligent knowledge retrieval
-- **Embedding Cache**: Redis caching for Voyage AI embeddings to reduce repeated token usage
-- **Multi-Tenant SaaS**: Isolated project workspaces with Row Level Security
-- **Real-time Collaboration**: WebSocket updates for task progress and results
-- **Async Processing**: Celery + Redis for scalable background task processing
-- **Modern API**: FastAPI with automatic OpenAPI documentation
-- **Type Safety**: Full TypeScript + Python type coverage
+| Layer | Current implementation |
+| --- | --- |
+| Frontend | Next.js 14, React 18, TypeScript, Tailwind CSS |
+| API | Fastify 4, TypeScript, JWT auth |
+| Database | PostgreSQL 16, Prisma, pgvector, Row Level Security |
+| Cache / realtime | Redis, SSE task streams |
+| AI engine | Provider router for Claude, DeepSeek, ChatGPT/OpenAI, Gemini; Voyage AI for embeddings |
+| Workflows | n8n for workflow orchestration, with n8n-as-code workflow files |
+| Storage | MinIO S3-compatible storage |
+| Metrics | `/metrics` endpoint plus Prometheus |
 
-## 🏗️ Architecture
+This is not a FastAPI, CrewAI, Celery, pytest, ruff, or black project.
 
-```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Next.js       │    │   FastAPI       │    │   CrewAI        │
-│   Frontend      │◄──►│   Backend       │◄──►│   Agents        │
-│                 │    │                 │    │                 │
-│ • React 18      │    │ • Pydantic      │    │ • Marketer      │
-│ • TypeScript    │    │ • JWT Auth      │    │ • Content Maker │
-│ • Tailwind CSS  │    │ • Async/Await   │    │ • Evaluator     │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                              │                        │
-                              ▼                        ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│ PostgreSQL      │    │   Redis         │    │   Voyage AI     │
-│ + pgvector      │    │   Cache/Queue   │    │   Embeddings    │
-│                 │    │                 │    │                 │
-│ • RAG Storage   │    │ • Sessions      │    │ • 1024d vectors │
-│ • Multi-tenant  │    │ • Background    │    │ • Cosine sim    │
-│ • RLS Policies  │    │ • Tasks         │    │                 │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-```
+## Services
 
-## 📋 Prerequisites
+Docker Compose exposes these local services:
 
-- **Python 3.11+**
-- **Node.js 18+**
-- **PostgreSQL 16+** with pgvector extension
-- **Redis 7+**
-- **Docker & Docker Compose** (for local development)
+| Service | URL / port |
+| --- | --- |
+| Frontend | `http://localhost:3002` |
+| API | `http://localhost:3001` |
+| API health | `http://localhost:3001/health` |
+| API metrics | `http://localhost:3001/metrics` |
+| n8n | `http://localhost:5678` |
+| PostgreSQL | `localhost:5432` |
+| Redis | `localhost:6380` |
+| MinIO console | `http://localhost:9001` |
+| Prometheus | `http://localhost:9090` |
 
-## 🛠️ Quick Start
+Inside Docker, the API talks to PostgreSQL as `postgres:5432`, Redis as `redis:6379`, n8n as `http://n8n:5678`, and MinIO as `minio:9000`.
 
-### 1. Clone and Setup
+## Quick Start
+
+Use Docker Compose as the reliable local start path:
+
 ```bash
-git clone https://github.com/your-org/ai-marketing-platform.git
-cd ai-marketing-platform
-```
-
-### 2. Environment Setup
-```bash
-# Copy environment template
 cp .env.example .env
-
-# Edit with your API keys
-nano .env
+# edit .env with real secrets and API keys
+docker compose up -d --build
 ```
 
-Required environment variables:
-```bash
-# AI Services
-ANTHROPIC_API_KEY=your_claude_key
-VOYAGE_API_KEY=your_voyage_key
-
-# Database
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/marketing_db
-
-# Redis
-REDIS_URL=redis://localhost:6379
-
-# Security
-SECRET_KEY=your-secret-key-here
-JWT_SECRET_KEY=your-jwt-secret
-```
-
-### 3. Local Development with Docker
-```bash
-# Start all services
-docker-compose up -d
-
-# Run database migrations
-docker-compose exec api python -m alembic upgrade head
-
-# Seed initial data
-docker-compose exec api python -m app.scripts.seed
-```
-
-### 4. Manual Setup (Alternative)
-```bash
-# Install Python dependencies
-pip install -r packages/ai-engine/requirements.txt
-
-# Install Node.js dependencies
-npm install
-
-# Start PostgreSQL and Redis
-# (configure your local instances)
-
-# Run migrations
-alembic upgrade head
-
-# Start the API server
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
-
-# Start the frontend (in another terminal)
-npm run dev
-```
-
-## 📖 Usage
-
-### Creating a Marketing Task
-
-```python
-import httpx
-
-async with httpx.AsyncClient() as client:
-    response = await client.post(
-        "http://localhost:8000/api/v1/projects/{project_id}/tasks",
-        json={
-            "title": "Q1 Social Media Campaign",
-            "description": "Create engaging Instagram content for product launch",
-            "task_type": "content_creation",
-            "input_data": {
-                "target_audience": "Millennials 25-35",
-                "product": "AI Analytics Platform",
-                "tone": "professional_casual",
-                "platforms": ["instagram", "linkedin"]
-            }
-        },
-        headers={"Authorization": "Bearer your-jwt-token"}
-    )
-
-    task = response.json()
-    print(f"Task created: {task['task_id']}")
-```
-
-### Searching Knowledge Base
-
-```python
-response = await client.post(
-    f"/api/v1/projects/{project_id}/search",
-    json={
-        "query": "competitor analysis techniques",
-        "limit": 5,
-        "filters": {
-            "content_type": "document",
-            "date_from": "2024-01-01"
-        }
-    }
-)
-
-results = response.json()
-for result in results["results"]:
-    print(f"Found: {result['content'][:100]}...")
-```
-
-## 🧪 Testing
+Check the running stack:
 
 ```bash
-# Run all tests with coverage
-pytest --cov=app --cov-report=html
-
-# Run specific test file
-pytest tests/test_tasks.py -v
-
-# Run with different Python version
-tox
+curl http://localhost:3001/health
+curl -I http://localhost:3002/login
+docker compose ps
 ```
 
-## 📚 Documentation
+The API container runs `prisma db push` on startup and ensures the pgvector knowledge schema exists. The frontend container serves Next.js on container port `3000`, mapped to host port `3002`.
 
-- **[Architecture Overview](docs/ARCHITECTURE.md)** - System design and data flow
-- **[API Specification](docs/API_SPEC.md)** - Complete API reference
-- **[Code Style Guide](docs/CODE_STYLE.md)** - Development standards
-- **[Testing Guide](docs/TEST_GUIDE.md)** - Testing strategies and tools
-- **[Spec-Driven Development Guide](specs/README.md)** - Contract-first workflow and task protocol
-- **[Deployment Guide](docs/DOCKER.md)** - Production deployment
-- **[Debug Protocol](docs/DEBUG_PROTOCOL.md)** - Troubleshooting guide
+`start-dev.sh` is still present, but Docker Compose is the current source of truth for running the full local stack.
 
-## 🤝 Contributing
+## Environment
 
-1. **Fork** the repository
-2. **Create** a feature branch: `git checkout -b feature/amazing-feature`
-3. **Follow** the [Code Style Guide](docs/CODE_STYLE.md)
-4. **Write tests** for new functionality
-5. **Commit** with clear messages: `git commit -m "Add amazing feature"`
-6. **Push** to the branch: `git push origin feature/amazing-feature`
-7. **Open** a Pull Request
+Docker Compose reads `.env` from the repository root. The API container also mounts that file at `/repo/.env`, because model settings can be updated from the UI.
 
-### Development Workflow
+Minimum secrets for normal local work:
 
 ```bash
-# 1. Create feature branch
-git checkout -b feature/new-agent-capability
-
-# 2. Make changes following code style
-# 3. Run tests
-pytest
-
-# 4. Run linting
-ruff check .
-
-# 5. Format code
-black .
-
-# 6. Commit (pre-commit hooks will run automatically)
-git commit -m "feat: add new agent capability"
-
-# 7. Push and create PR
-git push origin feature/new-agent-capability
+JWT_SECRET=...
+JWT_REFRESH_SECRET=...
+INTERNAL_API_TOKEN=...
+N8N_ENCRYPTION_KEY=...
+N8N_API_KEY=...
+VOYAGE_API_KEY=...
 ```
 
-## 🔧 Development Scripts
+Model provider settings:
 
 ```bash
-# Setup development environment
-./scripts/setup.sh
+MODEL_PROVIDER=GEMINI # CLAUDE | DEEPSEEK | CHATGPT | GEMINI
+MODEL_API_KEY=...
+MODEL_API_URL=...
 
-# Run tests with coverage
-./scripts/test.sh
+ANTHROPIC_API_KEY=...
+ANTHROPIC_API_URL=https://api.anthropic.com
 
-# Lint and format code
-./scripts/lint.sh
+OPENAI_API_KEY=...
+OPENAI_API_URL=https://api.openai.com/v1
 
-# Generate API documentation
-./scripts/docs.sh
+DEEPSEEK_API_KEY=...
+DEEPSEEK_API_URL=https://api.deepseek.com
 
-# Deploy to staging
-./scripts/deploy.sh staging
+GEMINI_API_KEY=...
+GEMINI_API_URL=https://generativelanguage.googleapis.com/v1beta
 ```
 
-## 📊 Monitoring
+The Profile page contains Model API Settings. Saving there writes the selected provider, API key, and API URL into `.env` and also updates the running API process, so an API container restart is not required for model-provider changes.
 
-The platform includes comprehensive monitoring:
+Do not commit `.env` or real API keys.
 
-- **Prometheus metrics** for performance monitoring
-- **Structured logging** with correlation IDs
-- **Health checks** for all services
-- **Error tracking** with Sentry integration
-- **Real-time dashboards** for task progress
+## Model Providers
 
-## 🚀 Deployment
+The selected `MODEL_PROVIDER` is used by agent execution and streaming.
 
-### Docker Production Deployment
+| Provider | API style |
+| --- | --- |
+| `CLAUDE` | Anthropic Messages API |
+| `CHATGPT` | OpenAI-compatible chat completions |
+| `DEEPSEEK` | OpenAI-compatible chat completions |
+| `GEMINI` | Google `generateContent` endpoint |
+
+Gemini requests are built in the Google format:
+
 ```bash
-# Build and deploy
-docker-compose -f docker-compose.prod.yml up -d
-
-# Scale workers
-docker-compose up -d --scale celery-worker=3
+curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=$GEMINI_API_KEY" \
+  -H "Content-Type: application/json" \
+  -X POST \
+  -d '{"contents":[{"parts":[{"text":"Explain how AI works in a few words"}]}]}'
 ```
 
-### Kubernetes Deployment
+`GEMINI_API_URL` may be either a base URL such as `https://generativelanguage.googleapis.com/v1beta` or a full model endpoint. The code appends the API key as the `key` query parameter.
+
+Voyage AI is still required for embeddings and knowledge retrieval.
+
+## Task Lifecycle
+
+Task creation is asynchronous:
+
+1. `POST /api/projects/:projectId/tasks` creates the task immediately.
+2. The API returns `201` with status `QUEUED`.
+3. Scoring and scenario execution run in the background.
+4. The frontend polls and uses SSE to display task progress and output.
+
+Quality score is internal and is not displayed in the UI. If a task does not have enough useful input, the UI shows:
+
+```text
+Not enough input. Please describe the task in more detail.
+```
+
+Review Output is stored in the system and rendered as Markdown in the frontend. Supported formatting includes headings, bold and italic text, inline code, fenced code blocks, links, lists, blockquotes, and tables.
+
+Scenario A currently runs directly through the API. Other scenario execution paths use n8n workflows and internal API callbacks.
+
+## API Examples
+
+Register and login:
+
 ```bash
-# Apply manifests
-kubectl apply -f k8s/
+curl -X POST http://localhost:3001/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123","name":"Demo User"}'
 
-# Check status
-kubectl get pods
+curl -X POST http://localhost:3001/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password123"}'
 ```
 
-## 📄 License
+Create a project:
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+```bash
+curl -X POST http://localhost:3001/api/projects \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Demo Project","description":"Local marketing automation test"}'
+```
 
-## 🙏 Acknowledgments
+Create a task:
 
-- **Anthropic** for Claude AI models
-- **Voyage AI** for embedding services
-- **CrewAI** for multi-agent orchestration
-- **FastAPI** for the amazing web framework
-- **pgvector** for vector database capabilities
+```bash
+curl -X POST http://localhost:3001/api/projects/$PROJECT_ID/tasks \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"input":"Create an Instagram post with image direction and copy about our mission."}'
+```
 
-## 📞 Support
+List tasks:
 
-- **Issues**: [GitHub Issues](https://github.com/your-org/ai-marketing-platform/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/ai-marketing-platform/discussions)
-- **Email**: support@marketing-platform.com
+```bash
+curl http://localhost:3001/api/projects/$PROJECT_ID/tasks \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
 
----
+Search project knowledge:
 
-**Built with ❤️ for modern marketing teams**
+```bash
+curl "http://localhost:3001/api/projects/$PROJECT_ID/knowledge/search?q=brand%20voice" \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+```
+
+## n8n Workflows
+
+n8n is used for workflow orchestration and callbacks into the API. The current n8n-as-code active workflow directory is declared in `n8nac-config.json`:
+
+```text
+apps/workflows/local_5678_user_04b4a55a_19a1_4e19_9c54_3a201a6a7c0f/personal
+```
+
+Before editing or publishing workflows, confirm the active instance:
+
+```bash
+npx --yes n8nac list
+```
+
+Do not guess workflow paths. There are older local workflow directories in the repository; `n8nac-config.json` and `n8nac list` are the source of truth.
+
+## Development Commands
+
+Install dependencies for a package:
+
+```bash
+npm install --prefix apps/api
+npm install --prefix apps/frontend
+npm install --prefix packages/db
+npm install --prefix packages/ai-engine
+```
+
+Type-check:
+
+```bash
+npx tsc --noEmit -p apps/api/tsconfig.json
+npx tsc --noEmit -p apps/frontend/tsconfig.json
+npx tsc --noEmit -p packages/ai-engine/tsconfig.json
+```
+
+Run API tests:
+
+```bash
+npx vitest run --config vitest.config.ts
+npx vitest run --config vitest.config.ts apps/api/tests/tasks.test.ts
+```
+
+Run frontend build:
+
+```bash
+npm --prefix apps/frontend run build
+```
+
+Run E2E tests against the Docker frontend:
+
+```bash
+BASE_URL=http://localhost:3002 npm --prefix apps/e2e run test
+```
+
+## Logs and Monitoring
+
+API logs:
+
+```bash
+docker compose logs -f api
+```
+
+Frontend logs:
+
+```bash
+docker compose logs -f frontend
+```
+
+n8n logs:
+
+```bash
+docker compose logs -f n8n
+```
+
+Model-call and token telemetry can be found in API logs by searching for:
+
+```text
+agent_step_telemetry
+token_usage
+API error
+Ignoring workflow model
+```
+
+Redis also stores telemetry keys such as:
+
+```text
+agent_step_telemetry
+agent_step_telemetry:{taskId}
+```
+
+Prometheus scrapes the API metrics endpoint. Open `http://localhost:9090` or call `http://localhost:3001/metrics`.
+
+## Troubleshooting
+
+If task creation fails with a provider or billing message, check the selected provider in Profile, the matching key in `.env`, and `docker compose logs -f api`.
+
+If n8n webhook execution fails, confirm n8n is healthy and workflows are active/published:
+
+```bash
+docker compose ps n8n
+npx --yes n8nac list
+```
+
+If Review Output briefly appears and then shows a loading state, check the task detail endpoint and API logs. Output is expected to persist in the database once callback or direct execution saves it.
+
+If knowledge search or embeddings fail, verify `VOYAGE_API_KEY`.
+
+If API startup takes time, check logs. The API syncs Prisma schema and pgvector columns before starting.
+
+## Documentation
+
+Relevant project docs:
+
+- [Architecture](docs/ARCHITECTURE.md)
+- [API spec](docs/API_SPEC.md)
+- [Debug protocol](docs/DEBUG_PROTOCOL.md)
+- [Testing guide](docs/TEST_GUIDE.md)
+- [Docker notes](docs/DOCKER.md)
+- [Spec index](specs/README.md)
+- [Agent sync](docs/AGENT_SYNC.md)
+- [n8n agent rules](docs/AGENTS.md)
+
+Project coordination state lives in `WORKPLAN.md`. Agent chat and implementation handoffs live in `AGENTS_CHAT.md`.

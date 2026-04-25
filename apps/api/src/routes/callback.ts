@@ -25,6 +25,28 @@ function isInternalRequest(request: { headers: Record<string, string | string[] 
   return safeEqual(candidate, expected)
 }
 
+type ModelProvider = 'CLAUDE' | 'DEEPSEEK' | 'CHATGPT' | 'GEMINI'
+
+function getSelectedModelProvider(): ModelProvider {
+  const provider = process.env.MODEL_PROVIDER?.toUpperCase()
+  if (provider === 'DEEPSEEK' || provider === 'CHATGPT' || provider === 'GEMINI') return provider
+  return 'CLAUDE'
+}
+
+function isModelCompatibleWithProvider(provider: ModelProvider, model: string): boolean {
+  const normalized = model.toLowerCase()
+  if (provider === 'CLAUDE') return normalized.startsWith('claude-')
+  if (provider === 'DEEPSEEK') return normalized.startsWith('deepseek')
+  if (provider === 'CHATGPT') return normalized.startsWith('gpt-') || normalized.startsWith('o')
+  return normalized.startsWith('gemini') || normalized.startsWith('models/gemini')
+}
+
+function resolveRequestedModel(model: string | undefined): string | undefined {
+  if (!model) return undefined
+  const provider = getSelectedModelProvider()
+  return isModelCompatibleWithProvider(provider, model) ? model : undefined
+}
+
 export async function callbackRoutes(app: FastifyInstance) {
   // Fail fast at server start if internal token not configured
   app.addHook('onReady', async () => {
@@ -33,7 +55,7 @@ export async function callbackRoutes(app: FastifyInstance) {
     }
   })
   // POST /api/internal/agent-completion
-  // Monitored Claude completion endpoint for n8n workflows.
+  // Monitored model completion endpoint for n8n workflows.
   app.post('/agent-completion', async (request, reply) => {
     if (!isInternalRequest(request)) return reply.unauthorized('Invalid internal token')
 
@@ -56,13 +78,21 @@ export async function callbackRoutes(app: FastifyInstance) {
     }
 
     try {
+      const selectedProvider = getSelectedModelProvider()
+      const requestedModel = resolveRequestedModel(body.model)
+      if (body.model && !requestedModel) {
+        app.log.warn(
+          { selectedProvider, requestedModel: body.model },
+          'Ignoring workflow model because it does not match selected model provider'
+        )
+      }
       // Enable prompt caching for Sonnet agent calls (min 1024 tokens).
       // Scoring uses Haiku (min 2048) with a short prompt, so skip caching there.
       const isAgentCall = body.operation ? !body.operation.includes('scoring') : true
       const output = await runAgent({
         systemPrompt: body.systemPrompt,
         userMessage: body.userMessage,
-        model: body.model,
+        model: requestedModel,
         maxTokens: body.maxTokens,
         operation: body.operation ?? 'n8n.agentCompletion',
         semanticCacheKey: body.semanticCacheKey,

@@ -17,7 +17,7 @@ parts: 1
 ## Testing Workflow
 - `specs/` = primary source of requirements; `docs/TEST_GUIDE.md` = compact testing reference for Fastify, n8n workflows, and AI logic.
 - Before any test task: pick relevant `specs/*.md`; select minimal implementation context through `docs/context_map.md`; clarify/create spec if missing; clarify ambiguous requirements before coding.
-- After edits: run checks from nearest `package.json`; use Python `pytest` only for touched Python scripts/tests.
+- After edits: run checks from nearest `package.json`; use Python `pytest` only for the manual Voyage smoke test or when explicitly changing a Python helper.
 - If dependencies/checks are unavailable: report that fact; do not replace failed/unavailable verification with code reading.
 - Integration tests live in `tests/integration/`.
 - Test-first rule: specs drive tests before implementation; update spec `last_updated` when changing requirements.
@@ -27,13 +27,13 @@ parts: 1
 - Fastify API: verify statuses, payloads, auth, permission errors; tools/checks include `npm run build` and route tests.
 - Zod contracts: verify input/output validation around `packages/shared`.
 - n8n workflows: verify routing, callbacks, payload shape; use n8n-as-code validate/test.
-- AI engine: verify Claude/Voyage wrappers, token limits, cache fallback; use unit tests with provider mocks.
+- AI engine: verify selected model-provider routing, Voyage wrappers, token limits, cache fallback; use unit tests with provider mocks.
 - RAG: verify `maxCharsPerChunk`, `maxTotalChars`, `minSimilarity`; use unit/API tests with mocked embeddings.
 - API/shared contracts: start from Zod schemas.
-- Claude/Voyage tests: provider mocks required for reproducibility and token economy.
+- Model-provider/Voyage tests: provider mocks required for reproducibility and token economy.
 - Workflow tests: change one scenario file at a time; verify callback payloads.
 - Debugging: API failure starts with route schema and shared types; workflow failure compares payload with `specs/agent-orchestration.md` and `docs/agent_protocol.md`; external AI bug gets mocked provider response and repeatable test.
-- Documented run commands: `cd apps/api && npm run build`; `cd packages/shared && npx tsc --noEmit`; `pytest -v`.
+- Documented run commands: `npx tsc --noEmit -p apps/api/tsconfig.json`; `npx tsc --noEmit -p apps/frontend/tsconfig.json`; `npx tsc --noEmit -p packages/ai-engine/tsconfig.json`; `npx vitest run --config vitest.config.ts`; `BASE_URL=http://localhost:3002 npm --prefix apps/e2e run test`; manual Voyage check: `pytest tests/ai_sanity_check.py`.
 
 ## Spec Inventory
 - `auth-projects-profile.md`: approved high-priority contract for registration, login, projects, project profile; updated 2026-04-10.

@@ -12,14 +12,14 @@ export default function ProjectError({
     useEffect(() => { console.error(error) }, [error])
 
     return (
-        <div className="p-6 text-center">
-            <h2 className="text-lg font-semibold text-red-600 mb-2">Something went wrong</h2>
-            <p className="text-sm text-gray-500 mb-4">{error.message}</p>
+        <div className="glass-panel p-8 text-center">
+            <h2 className="mb-2 text-lg font-semibold text-rose-200">Something went wrong</h2>
+            <p className="muted-text mb-4 text-sm">{error.message}</p>
             <div className="flex gap-3 justify-center">
-                <button onClick={reset} className="border px-4 py-2 rounded text-sm hover:bg-gray-50">
+                <button onClick={reset} className="btn-secondary">
                     Try again
                 </button>
-                <Link href="/dashboard" className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700">
+                <Link href="/dashboard" className="btn-primary">
                     Back to Dashboard
                 </Link>
             </div>

@@ -29,37 +29,39 @@ export default function NewProjectPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto p-6">
-      <div className="flex items-center gap-4 mb-6">
-        <Link href="/dashboard" className="text-sm text-gray-500 hover:text-gray-700">← Dashboard</Link>
-        <h1 className="text-2xl font-semibold">New Project</h1>
-      </div>
-      <div className="bg-white border rounded-lg p-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+    <div className="space-page">
+      <div className="space-container">
+        <div className="mb-8 flex items-center justify-between gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Project Name <span className="text-red-500">*</span></label>
-            <input type="text" value={name} onChange={e => setName(e.target.value)} required
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="My Marketing Campaign" />
+            <Link href="/dashboard" className="muted-text text-sm hover:text-white">← Dashboard</Link>
+            <h1 className="page-title mt-2">New Project</h1>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Description</label>
-            <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="What is this project about?" />
-          </div>
-          {error && <p className="text-sm text-red-600">{error}</p>}
-          <div className="flex gap-3">
-            <button type="submit" disabled={loading}
-              className="bg-blue-600 text-white px-4 py-2 rounded text-sm font-medium hover:bg-blue-700 disabled:opacity-50">
-              {loading ? 'Creating...' : 'Create Project'}
-            </button>
-            <Link href="/dashboard"
-              className="border px-4 py-2 rounded text-sm font-medium hover:bg-gray-50">
-              Cancel
-            </Link>
-          </div>
-        </form>
+        </div>
+        <div className="glass-panel p-6">
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="field-label">Project Name <span className="text-rose-300">*</span></label>
+              <input type="text" value={name} onChange={e => setName(e.target.value)} required
+                className="field"
+                placeholder="My Marketing Campaign" />
+            </div>
+            <div>
+              <label className="field-label">Description</label>
+              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
+                className="field"
+                placeholder="What is this project about?" />
+            </div>
+            {error && <p className="text-sm text-rose-300">{error}</p>}
+            <div className="flex gap-3">
+              <button type="submit" disabled={loading} className="btn-primary">
+                {loading ? 'Creating...' : 'Create Project'}
+              </button>
+              <Link href="/dashboard" className="btn-secondary">
+                Cancel
+              </Link>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   )

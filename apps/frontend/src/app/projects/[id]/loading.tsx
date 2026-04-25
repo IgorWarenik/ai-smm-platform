@@ -1,10 +1,10 @@
 export default function ProjectLoading() {
     return (
-        <div className="p-6">
+        <div className="glass-panel p-6">
             <div className="animate-pulse space-y-3">
-                <div className="h-4 bg-gray-200 rounded w-1/3" />
-                <div className="h-4 bg-gray-200 rounded w-1/2" />
-                <div className="h-4 bg-gray-200 rounded w-2/3" />
+                <div className="h-4 w-1/3 rounded bg-white/10" />
+                <div className="h-4 w-1/2 rounded bg-white/10" />
+                <div className="h-4 w-2/3 rounded bg-white/10" />
             </div>
         </div>
     )

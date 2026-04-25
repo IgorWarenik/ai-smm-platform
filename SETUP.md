@@ -1,45 +1,61 @@
 # Setup & Deployment Guide
 
 ## Prerequisites
-- Node.js 20+
-- Docker & Docker Compose
-- Anthropic & Voyage AI API Keys
 
-## ⚡ Quick One-Command Start
+- Node.js 20+
+- npm
+- Docker with `docker compose`
+- Model provider API key for the provider you want to use
+- Voyage AI API key for embeddings / RAG
+
+## Recommended Local Start
 
 ```bash
-chmod +x start-dev.sh
+cp .env.example .env
+# fill in real secrets
+docker compose up -d --build
+```
+
+Service URLs:
+
+- Frontend: `http://localhost:3002`
+- API: `http://localhost:3001`
+- n8n: `http://localhost:5678`
+- MinIO console: `http://localhost:9001`
+- Prometheus: `http://localhost:9090`
+
+## Alternative Dev Flow
+
+To run API and frontend dev servers locally while infra stays in Docker:
+
+```bash
 ./start-dev.sh
 ```
 
-## Quick Start
+That script starts PostgreSQL, Redis, n8n, MinIO, and Prometheus in Docker, then launches local dev servers for:
 
-1. **Clone & Install**:
-   ```bash
-   git clone <repo>
-   npm install
-   ```
+- API on `http://localhost:3001`
+- Frontend on `http://localhost:3000`
 
-2. **Environment**:
-   ```bash
-   cp .env.example .env
-   ```
+## Health Checks
 
-3. **Infrastructure**:
-   ```bash
-   docker-compose up -d
-   ```
+```bash
+curl http://localhost:3001/health
+curl -I http://localhost:3002/login
+docker compose ps
+```
 
-4. **Database**:
-   ```bash
-   npx prisma migrate dev
-   npx prisma db seed
-   ```
+## Validation
 
-5. **Run Services**:
-   - API: `npm run dev --workspace=apps/api`
-   - Frontend: `npm run dev --workspace=apps/frontend`
+```bash
+npx tsc --noEmit -p apps/api/tsconfig.json
+npx tsc --noEmit -p apps/frontend/tsconfig.json
+npx tsc --noEmit -p packages/ai-engine/tsconfig.json
+npx vitest run --config vitest.config.ts
+```
 
 ## Monitoring
-Prometheus metrics are available at `http://localhost:3001/metrics`.
-n8n dashboard is at `http://localhost:5678`.
+
+- Prometheus metrics: `http://localhost:3001/metrics`
+- n8n dashboard: `http://localhost:5678`
+- API logs: `docker compose logs -f api`

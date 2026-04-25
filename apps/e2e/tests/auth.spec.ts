@@ -6,9 +6,9 @@ function uniqueEmail() {
 
 async function register(page: Parameters<Parameters<typeof test>[1]>[0], email: string) {
   await page.goto('/register')
-  await page.getByLabel('Name').fill('E2E Tester')
-  await page.getByLabel('Email').fill(email)
-  await page.getByLabel('Password').fill('password123!')
+  await page.locator('input[type="text"]').fill('E2E Tester')
+  await page.locator('input[type="email"]').fill(email)
+  await page.locator('input[type="password"]').fill('password123!')
   await page.getByRole('button', { name: 'Register' }).click()
   await page.waitForURL('/dashboard')
 }
@@ -26,8 +26,8 @@ test.describe('Authentication', () => {
     await page.getByRole('button', { name: 'Logout' }).click()
     await page.waitForURL('/login')
 
-    await page.getByLabel('Email').fill(email)
-    await page.getByLabel('Password').fill('password123!')
+    await page.locator('input[type="email"]').fill(email)
+    await page.locator('input[type="password"]').fill('password123!')
     await page.getByRole('button', { name: 'Sign In' }).click()
     await page.waitForURL('/dashboard')
     await expect(page.getByRole('heading', { name: 'Projects' })).toBeVisible()
@@ -35,8 +35,8 @@ test.describe('Authentication', () => {
 
   test('wrong password → error visible', async ({ page }) => {
     await page.goto('/login')
-    await page.getByLabel('Email').fill('nobody@e2e.test')
-    await page.getByLabel('Password').fill('wrongpassword')
+    await page.locator('input[type="email"]').fill('nobody@e2e.test')
+    await page.locator('input[type="password"]').fill('wrongpassword')
     await page.getByRole('button', { name: 'Sign In' }).click()
     await expect(page.locator('p.text-red-600')).toBeVisible()
   })

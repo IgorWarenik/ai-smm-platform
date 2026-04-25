@@ -4,6 +4,7 @@ import {
   ClarificationResponseSchema,
   CreateTaskSchema,
   ExecuteTaskSchema,
+  AgentType,
   ExecutionStatus,
   OrchestratorWebhookPayload,
   ScenarioType,
@@ -14,12 +15,24 @@ import {
   TaskStatus,
   ToneOfVoice,
 } from '@ai-marketing/shared'
+import { runAgent } from '@ai-marketing/ai-engine'
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { z } from 'zod'
 import { sseManager } from '../lib/sse'
 import { scoreTask } from '../services/scoring'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const DIRECT_SCENARIO_A_CONTENT_KEYWORDS = [
+  'напиши',
+  'пост',
+  'текст',
+  'контент',
+  'статья',
+  'caption',
+  'write',
+  'copy',
+  'script',
+]
 
 function assertUuid(reply: FastifyReply, value: string, label: string): boolean {
   if (!UUID_RE.test(value)) {
@@ -27,6 +40,462 @@ function assertUuid(reply: FastifyReply, value: string, label: string): boolean 
     return false
   }
   return true
+}
+
+function buildProfileContext(profile: {
+  companyName: string
+  description: string
+  niche: string
+  geography: string
+  products: unknown
+  audience: unknown
+  usp: string | null
+  tov: unknown
+  keywords: string[]
+  forbidden: string[]
+}) {
+  const audience = Array.isArray(profile.audience) ? profile.audience : []
+  const audienceLines = audience
+    .map((item) => {
+      if (!item || typeof item !== 'object') return null
+      const audienceItem = item as { segment?: unknown; portrait?: unknown }
+      if (!audienceItem.segment || !audienceItem.portrait) return null
+      return `- ${String(audienceItem.segment)}: ${String(audienceItem.portrait)}`
+    })
+    .filter(Boolean)
+
+  return [
+    '## Контекст проекта',
+    `**Компания:** ${profile.companyName}`,
+    `**Описание:** ${profile.description}`,
+    `**Ниша:** ${profile.niche}`,
+    `**География:** ${profile.geography}`,
+    profile.usp ? `**УТП:** ${profile.usp}` : null,
+    profile.tov ? `**Тон голоса:** ${String(profile.tov)}` : null,
+    profile.keywords.length ? `**Обязательные слова:** ${profile.keywords.join(', ')}` : null,
+    profile.forbidden.length ? `**Запрещённые слова:** ${profile.forbidden.join(', ')}` : null,
+    audienceLines.length ? `**Аудитория:**\n${audienceLines.join('\n')}` : null,
+  ]
+    .filter(Boolean)
+    .join('\n')
+}
+
+function buildScenarioAFallbackOutput(
+  input: string,
+  agentType: AgentType,
+  profile: Parameters<typeof buildProfileContext>[0]
+) {
+  const keywordLine = profile.keywords.length ? `\nКлючевые слова: ${profile.keywords.join(', ')}` : ''
+  const forbiddenLine = profile.forbidden.length ? `\nИзбегать: ${profile.forbidden.join(', ')}` : ''
+  const intro =
+    agentType === AgentType.CONTENT_MAKER
+      ? 'Локальный черновик контента'
+      : 'Локальный маркетинговый черновик'
+
+  return `${intro}
+
+Задача: ${input}
+Бренд: ${profile.companyName}
+Ниша: ${profile.niche}
+Тон: ${String(profile.tov || ToneOfVoice.FRIENDLY)}${keywordLine}${forbiddenLine}
+
+Instagram post:
+
+${profile.companyName} помогает людям увидеть ценность в том, что важно уже сегодня.
+
+Наша миссия — делать ${profile.niche.toLowerCase()} понятнее, ближе и полезнее для аудитории. Мы соединяем опыт, внимание к деталям и живую коммуникацию, чтобы каждый контакт с брендом давал ощущение ясности и доверия.
+
+Визуальная идея:
+Команда или продукт в естественной рабочей среде, светлый кадр, акцент на людях, процессе и уверенном движении вперед.
+
+Caption:
+Мы верим, что сильный бренд начинается с понятной миссии. Для нас это не просто слова, а ежедневный ориентир: быть полезными, честными и создавать решения, которые помогают расти.
+
+CTA:
+Расскажите в комментариях, какая миссия вдохновляет вас в работе.
+
+Note: выбранный model provider сейчас недоступен, поэтому создан локальный fallback-черновик.`
+}
+
+async function runScenarioADirect(
+  app: FastifyInstance,
+  projectId: string,
+  userId: string,
+  executionId: string,
+  taskId: string,
+  input: string,
+  taskScore: number | null,
+  profile: Parameters<typeof buildProfileContext>[0]
+) {
+  const normalizedInput = input.toLowerCase()
+  const agentType = DIRECT_SCENARIO_A_CONTENT_KEYWORDS.some((keyword) => normalizedInput.includes(keyword))
+    ? AgentType.CONTENT_MAKER
+    : AgentType.MARKETER
+  const profileContext = buildProfileContext(profile)
+  const maxTokens =
+    agentType === AgentType.CONTENT_MAKER
+      ? Number(process.env.MAX_TOKENS_CONTENT_GENERATION || 4096)
+      : Number(process.env.MAX_TOKENS_MARKETER_BRIEF || 2400)
+  const systemPrompt =
+    agentType === AgentType.CONTENT_MAKER
+      ? `You are a Senior Content Strategist & Copywriter. Create professional content for the requested task. Use Russian language unless specified. Be specific, platform-native, and ready-to-publish.\n\n${profileContext}`
+      : `You are a Senior Marketing Strategist. Analyze and develop effective marketing recommendations. Use Russian language unless specified. Be specific and actionable.\n\n${profileContext}`
+
+  try {
+    const output = await runAgent({
+      systemPrompt,
+      userMessage: input,
+      maxTokens,
+      operation: `scenario-a.${agentType.toLowerCase()}.direct`,
+      semanticCacheKey: `scenario-a.direct:${taskId}`,
+      cacheSystemPrompt: true,
+      telemetry: {
+        taskId,
+        projectId,
+        scenario: ScenarioType.A,
+      },
+      onUsage: async ({ totalTokens }) => {
+        await prisma.billing.updateMany({
+          where: { projectId },
+          data: { tokensUsed: { increment: BigInt(totalTokens) } },
+        })
+      },
+    })
+
+    await withProjectContext(projectId, userId, async (tx) => {
+      await tx.agentOutput.create({
+        data: {
+          id: randomUUID(),
+          executionId,
+          agentType,
+          output,
+          iteration: 1,
+        },
+      })
+      await tx.execution.update({
+        where: { id: executionId },
+        data: { status: ExecutionStatus.COMPLETED, finishedAt: new Date() },
+      })
+      await tx.task.update({
+        where: { id: taskId },
+        data: { status: TaskStatus.AWAITING_APPROVAL },
+      })
+    })
+
+    void sseManager.publish(taskId, {
+      type: 'agent.output',
+      executionId,
+      agentType,
+      content: output,
+      iteration: 1,
+      taskScore: taskScore ?? undefined,
+      timestamp: new Date().toISOString(),
+    })
+    void sseManager.publish(taskId, {
+      type: 'execution.completed',
+      executionId,
+      requiresReview: false,
+      timestamp: new Date().toISOString(),
+    })
+  } catch (err) {
+    app.log.warn({ err, executionId }, 'Direct Scenario A provider call failed, using local fallback output')
+    const output = buildScenarioAFallbackOutput(input, agentType, profile)
+    await withProjectContext(projectId, userId, async (tx) => {
+      await tx.agentOutput.create({
+        data: {
+          id: randomUUID(),
+          executionId,
+          agentType,
+          output,
+          iteration: 1,
+        },
+      })
+      await tx.execution.update({
+        where: { id: executionId },
+        data: { status: ExecutionStatus.COMPLETED, finishedAt: new Date() },
+      })
+      await tx.task.update({
+        where: { id: taskId },
+        data: { status: TaskStatus.AWAITING_APPROVAL },
+      })
+    })
+    void sseManager.publish(taskId, {
+      type: 'agent.output',
+      executionId,
+      agentType,
+      content: output,
+      iteration: 1,
+      fallback: true,
+      timestamp: new Date().toISOString(),
+    })
+    void sseManager.publish(taskId, {
+      type: 'execution.completed',
+      executionId,
+      requiresReview: false,
+      timestamp: new Date().toISOString(),
+    })
+  }
+}
+
+async function startTaskExecution(
+  app: FastifyInstance,
+  projectId: string,
+  taskId: string,
+  userId: string,
+  scenarioOverride?: ScenarioType
+) {
+  // Fetch task and project profile together (§11.5 ТЗ — profile is required to start)
+  const [task, profile] = await withProjectContext(projectId, userId, async (tx) => {
+    return Promise.all([
+      tx.task.findFirst({ where: { id: taskId, projectId } }),
+      tx.projectProfile.findUnique({ where: { projectId } }),
+    ])
+  })
+
+  if (!task) {
+    return {
+      ok: false as const,
+      statusCode: 404,
+      payload: { error: 'Task not found', code: 'TASK_NOT_FOUND' },
+    }
+  }
+  if (task.status === TaskStatus.REJECTED) {
+    return {
+      ok: false as const,
+      statusCode: 400,
+      payload: { error: 'Task was rejected', code: 'TASK_REJECTED' },
+    }
+  }
+  if (task.status === TaskStatus.RUNNING) {
+    return {
+      ok: false as const,
+      statusCode: 409,
+      payload: { error: 'Task is already running', code: 'TASK_ALREADY_RUNNING' },
+    }
+  }
+  if (task.status === TaskStatus.AWAITING_CLARIFICATION) {
+    return {
+      ok: false as const,
+      statusCode: 400,
+      payload: {
+        error: 'Task requires clarification before execution',
+        code: 'TASK_REQUIRES_CLARIFICATION',
+      },
+    }
+  }
+
+  // §11.5 ТЗ — profile must be filled before running agents
+  if (!profile) {
+    return {
+      ok: false as const,
+      statusCode: 422,
+      payload: {
+        error: 'Project profile is required before executing tasks',
+        code: 'PROFILE_MISSING',
+      },
+    }
+  }
+
+  const scenario = (scenarioOverride ?? task.scenario) as ScenarioType | null
+  if (!scenario) {
+    return {
+      ok: false as const,
+      statusCode: 400,
+      payload: { error: 'No scenario available for this task', code: 'SCENARIO_MISSING' },
+    }
+  }
+
+  const apiBaseUrl = process.env.API_BASE_URL?.trim()
+  if (!apiBaseUrl) {
+    return {
+      ok: false as const,
+      statusCode: 500,
+      payload: {
+        error: 'API_BASE_URL is required before executing tasks',
+        code: 'API_BASE_URL_MISSING',
+      },
+    }
+  }
+
+  const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL?.trim()?.replace(/\/$/, '')
+  if (!n8nWebhookUrl) {
+    return {
+      ok: false as const,
+      statusCode: 500,
+      payload: {
+        error: 'N8N_WEBHOOK_URL is required before executing tasks',
+        code: 'N8N_WEBHOOK_URL_MISSING',
+      },
+    }
+  }
+
+  // Create execution record
+  const execution = await withProjectContext(projectId, userId, async (tx) => {
+    const exec = await tx.execution.create({
+      data: { id: randomUUID(), taskId, projectId, scenario, status: ExecutionStatus.RUNNING },
+    })
+    await tx.task.update({
+      where: { id: taskId },
+      data: { status: TaskStatus.RUNNING },
+    })
+    return exec
+  })
+
+  // Build payload with project profile injected for agents (§6.3 / §12.1 ТЗ)
+  const payload: OrchestratorWebhookPayload = {
+    executionId: execution.id,
+    taskId,
+    projectId,
+    input: task.input,
+    scenario,
+    taskScore: task.score ?? undefined,
+    callbackUrl: `${apiBaseUrl}/api/internal/callback`,
+    projectProfile: {
+      companyName: profile.companyName,
+      description: profile.description,
+      niche: profile.niche,
+      geography: profile.geography,
+      products: profile.products as object[],
+      audience: profile.audience as object[],
+      usp: profile.usp,
+      competitors: profile.competitors as object[],
+      tov: profile.tov as unknown as ToneOfVoice,
+      keywords: profile.keywords,
+      forbidden: profile.forbidden,
+    },
+  }
+
+  const markTriggerFailed = async () => {
+    await withProjectContext(projectId, userId, async (tx) => {
+      await tx.execution.update({
+        where: { id: execution.id },
+        data: { status: ExecutionStatus.FAILED, finishedAt: new Date() },
+      })
+      await tx.task.update({
+        where: { id: taskId },
+        data: { status: TaskStatus.FAILED },
+      })
+    })
+  }
+
+  const startDirectScenarioAFallback = async (reason: unknown) => {
+    app.log.warn({ reason, executionId: execution.id }, 'Starting direct Scenario A fallback')
+    await withProjectContext(projectId, userId, async (tx) => {
+      await tx.execution.update({
+        where: { id: execution.id },
+        data: { status: ExecutionStatus.RUNNING, finishedAt: null },
+      })
+      await tx.task.update({
+        where: { id: taskId },
+        data: { status: TaskStatus.RUNNING },
+      })
+    })
+    void runScenarioADirect(app, projectId, userId, execution.id, taskId, task.input, task.score, profile)
+    return { ok: true as const, execution }
+  }
+
+  if (scenario === ScenarioType.A) {
+    return startDirectScenarioAFallback('Scenario A runs directly from API')
+  }
+
+  try {
+    const triggerResponse = await fetch(`${n8nWebhookUrl}/orchestrator`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-N8N-API-KEY': process.env.N8N_API_KEY ?? '',
+      },
+      body: JSON.stringify(payload),
+    })
+
+    if (!triggerResponse.ok) {
+      const details = await triggerResponse.text().catch(() => '')
+      await markTriggerFailed()
+      app.log.error(
+        { status: triggerResponse.status, details, executionId: execution.id },
+        'n8n webhook rejected task execution'
+      )
+      return {
+        ok: false as const,
+        statusCode: 502,
+        payload: {
+          error: 'Failed to trigger n8n webhook',
+          code: 'N8N_TRIGGER_FAILED',
+          details: { status: triggerResponse.status },
+        },
+      }
+    }
+  } catch (err) {
+    await markTriggerFailed()
+    app.log.error({ err, executionId: execution.id }, 'Failed to trigger n8n webhook')
+    return {
+      ok: false as const,
+      statusCode: 502,
+      payload: {
+        error: 'Failed to trigger n8n webhook',
+        code: 'N8N_TRIGGER_FAILED',
+      },
+    }
+  }
+
+  return { ok: true as const, execution }
+}
+
+async function scoreAndStartTask(
+  app: FastifyInstance,
+  projectId: string,
+  taskId: string,
+  userId: string,
+  input: string
+) {
+  try {
+    const scoring = await scoreTask(input)
+    let status: TaskStatus
+    let clarificationNote: string | null = null
+
+    if (scoring.score < TASK_SCORE_THRESHOLD) {
+      status = TaskStatus.REJECTED
+    } else if (scoring.score >= TASK_SCORE_CLARIFICATION_MIN && scoring.score <= TASK_SCORE_CLARIFICATION_MAX) {
+      status = TaskStatus.AWAITING_CLARIFICATION
+      clarificationNote = scoring.clarificationQuestions?.join('\n') ?? null
+    } else {
+      status = TaskStatus.PENDING
+    }
+
+    const updated = await withProjectContext(projectId, userId, async (tx) => {
+      return tx.task.update({
+        where: { id: taskId },
+        data: {
+          score: scoring.score,
+          scenario: scoring.isValid ? (scoring.scenario as ScenarioType) : null,
+          status,
+          clarificationNote,
+          ...(status === TaskStatus.REJECTED && { rejectedAt: new Date() }),
+        },
+      })
+    })
+
+    void sseManager.publish(taskId, {
+      type: 'task.updated',
+      status: updated.status,
+      timestamp: new Date().toISOString(),
+    })
+
+    if (updated.status === TaskStatus.PENDING) {
+      const started = await startTaskExecution(app, projectId, taskId, userId)
+      if (!started.ok) {
+        app.log.error({ taskId, projectId, payload: started.payload }, 'Failed to start task after background scoring')
+      }
+    }
+  } catch (err) {
+    app.log.error({ err, taskId, projectId }, 'Background task scoring failed')
+    await withProjectContext(projectId, userId, async (tx) => {
+      await tx.task.update({
+        where: { id: taskId },
+        data: { status: TaskStatus.FAILED },
+      })
+    })
+  }
 }
 
 export async function taskRoutes(app: FastifyInstance) {
@@ -43,76 +512,21 @@ export async function taskRoutes(app: FastifyInstance) {
     })
     if (!membership) return reply.notFound('Project not found')
 
-    let scoring: Awaited<ReturnType<typeof scoreTask>>
-    try {
-      // Score the task (§11.1 ТЗ)
-      scoring = await scoreTask(body.input)
-    } catch (err) {
-      app.log.error({ err }, 'Failed to score task')
-      return reply.code(502).send({
-        error: 'AI scoring is unavailable. Check Anthropic API credits or billing.',
-        code: 'AI_SCORING_UNAVAILABLE',
-      })
-    }
-
     const task = await withProjectContext(projectId, userId, async (tx) => {
-      let status: TaskStatus
-      let clarificationNote: string | null = null
-
-      if (scoring.score < TASK_SCORE_THRESHOLD) {
-        // Below 25 — reject immediately
-        status = TaskStatus.REJECTED
-      } else if (scoring.score >= TASK_SCORE_CLARIFICATION_MIN && scoring.score <= TASK_SCORE_CLARIFICATION_MAX) {
-        // 25–39 — request clarification (§11.2 Вариант B)
-        status = TaskStatus.AWAITING_CLARIFICATION
-        clarificationNote = scoring.clarificationQuestions?.join('\n') ?? null
-      } else {
-        // 40+ — accept immediately
-        status = TaskStatus.PENDING
-      }
-
       return tx.task.create({
         data: {
           id: randomUUID(),
           projectId,
           input: body.input,
-          score: scoring.score,
-          scenario: scoring.isValid ? (scoring.scenario as ScenarioType) : null,
-          status,
-          clarificationNote,
-          ...(status === TaskStatus.REJECTED && { rejectedAt: new Date() }),
+          status: TaskStatus.QUEUED,
         },
       })
     })
 
-    if (task.status === TaskStatus.REJECTED) {
-      return reply.code(422).send({
-        error: 'Task rejected',
-        code: 'TASK_SCORE_TOO_LOW',
-        details: {
-          score: String(scoring.score),
-          threshold: String(TASK_SCORE_THRESHOLD),
-          reasoning: scoring.reasoning,
-        },
-      })
-    }
-
-    if (task.status === TaskStatus.AWAITING_CLARIFICATION) {
-      return reply.code(202).send({
-        data: task,
-        message: 'Task requires clarification before it can be processed',
-        clarificationQuestions: scoring.clarificationQuestions ?? [],
-      })
-    }
+    void scoreAndStartTask(app, projectId, task.id, userId, body.input)
 
     return reply.code(201).send({
       data: task,
-      scoring: {
-        score: scoring.score,
-        scenario: scoring.scenario,
-        reasoning: scoring.reasoning,
-        isValid: scoring.isValid,
-      },
     })
   })
 
@@ -128,16 +542,22 @@ export async function taskRoutes(app: FastifyInstance) {
     })
     if (!membership) return reply.notFound('Project not found')
 
-    return withProjectContext(projectId, userId, async (tx) => {
+    const result = await withProjectContext(projectId, userId, async (tx) => {
       const task = await tx.task.findFirst({ where: { id: taskId, projectId } })
-      if (!task) return reply.notFound('Task not found')
+      if (!task) return { kind: 'notFound' as const }
       if (task.status !== TaskStatus.AWAITING_CLARIFICATION) {
-        return reply.badRequest('Task is not awaiting clarification')
+        return { kind: 'badRequest' as const }
       }
 
       // Re-score with the enriched input (original + clarification answers)
       const enrichedInput = `${task.input}\n\nКлиент уточнил:\n${body.answer}`
-      const scoring = await scoreTask(enrichedInput)
+      let scoring: Awaited<ReturnType<typeof scoreTask>>
+      try {
+        scoring = await scoreTask(enrichedInput)
+      } catch (err) {
+        app.log.error({ err }, 'Failed to score clarified task')
+        return { kind: 'scoringUnavailable' as const }
+      }
 
       let status: TaskStatus
       let clarificationNote: string | null = null
@@ -164,19 +584,63 @@ export async function taskRoutes(app: FastifyInstance) {
       })
 
       if (updated.status === TaskStatus.REJECTED) {
-        return reply.code(422).send({
-          data: updated,
-          error: 'Task rejected after clarification',
-          code: 'TASK_SCORE_TOO_LOW',
+        return { kind: 'rejected' as const, updated }
+      }
+
+      return {
+        kind: 'ok' as const,
+        updated,
+        clarificationQuestions: scoring.clarificationQuestions ?? [],
+      }
+    })
+
+    if (result.kind === 'notFound') return reply.notFound('Task not found')
+    if (result.kind === 'badRequest') return reply.badRequest('Task is not awaiting clarification')
+    if (result.kind === 'scoringUnavailable') {
+      return reply.code(502).send({
+        error: 'AI scoring is unavailable. Check the selected model provider API key, credits, or billing.',
+        code: 'AI_SCORING_UNAVAILABLE',
+      })
+    }
+    if (result.kind === 'rejected') {
+      return reply.code(422).send({
+        data: result.updated,
+        error: 'Task rejected after clarification',
+        code: 'TASK_SCORE_TOO_LOW',
+      })
+    }
+
+    if (result.updated.status === TaskStatus.PENDING) {
+      const started = await startTaskExecution(app, projectId, result.updated.id, userId)
+      const startedTask = await withProjectContext(projectId, userId, async (tx) => {
+        return tx.task.findFirst({
+          where: { id: result.updated.id, projectId },
+          include: { executions: { include: { agentOutputs: true } } },
         })
+      })
+
+      if (!started.ok) {
+        if (started.payload.code === 'N8N_TRIGGER_FAILED') {
+          return reply.send({
+            data: startedTask ?? result.updated,
+            workflowStartError: started.payload,
+          })
+        }
+
+        return reply.code(started.statusCode).send(started.payload)
       }
 
       return reply.send({
-        data: updated,
-        ...(updated.status === TaskStatus.AWAITING_CLARIFICATION && {
-          clarificationQuestions: scoring.clarificationQuestions ?? [],
-        }),
+        data: startedTask ?? result.updated,
+        execution: started.execution,
       })
+    }
+
+    return reply.send({
+      data: result.updated,
+      ...(result.updated.status === TaskStatus.AWAITING_CLARIFICATION && {
+        clarificationQuestions: result.clarificationQuestions,
+      }),
     })
   })
 
@@ -290,130 +754,10 @@ export async function taskRoutes(app: FastifyInstance) {
     })
     if (!membership) return reply.notFound('Project not found')
 
-    // Fetch task and project profile together (§11.5 ТЗ — profile is required to start)
-    const [task, profile] = await withProjectContext(projectId, userId, async (tx) => {
-      return Promise.all([
-        tx.task.findFirst({ where: { id: taskId, projectId } }),
-        tx.projectProfile.findUnique({ where: { projectId } }),
-      ])
-    })
+    const started = await startTaskExecution(app, projectId, taskId, userId, body.scenario)
+    if (!started.ok) return reply.code(started.statusCode).send(started.payload)
 
-    if (!task) return reply.notFound('Task not found')
-    if (task.status === TaskStatus.REJECTED) return reply.badRequest('Task was rejected')
-    if (task.status === TaskStatus.RUNNING) return reply.conflict('Task is already running')
-    if (task.status === TaskStatus.AWAITING_CLARIFICATION) {
-      return reply.badRequest('Task requires clarification before execution')
-    }
-
-    // §11.5 ТЗ — profile must be filled before running agents
-    if (!profile) {
-      return reply.code(422).send({
-        error: 'Project profile is required before executing tasks',
-        code: 'PROFILE_MISSING',
-      })
-    }
-
-    const scenario = (body.scenario ?? task.scenario) as ScenarioType
-    if (!scenario) return reply.badRequest('No scenario available for this task')
-
-    const apiBaseUrl = process.env.API_BASE_URL?.trim()
-    if (!apiBaseUrl) {
-      return reply.code(500).send({
-        error: 'API_BASE_URL is required before executing tasks',
-        code: 'API_BASE_URL_MISSING',
-      })
-    }
-
-    const n8nWebhookUrl = process.env.N8N_WEBHOOK_URL?.trim()?.replace(/\/$/, '')
-    if (!n8nWebhookUrl) {
-      return reply.code(500).send({
-        error: 'N8N_WEBHOOK_URL is required before executing tasks',
-        code: 'N8N_WEBHOOK_URL_MISSING',
-      })
-    }
-
-    // Create execution record
-    const execution = await withProjectContext(projectId, userId, async (tx) => {
-      const exec = await tx.execution.create({
-        data: { id: randomUUID(), taskId, projectId, scenario, status: ExecutionStatus.RUNNING },
-      })
-      await tx.task.update({
-        where: { id: taskId },
-        data: { status: TaskStatus.RUNNING },
-      })
-      return exec
-    })
-
-    // Build payload with project profile injected for agents (§6.3 / §12.1 ТЗ)
-    const payload: OrchestratorWebhookPayload = {
-      executionId: execution.id,
-      taskId,
-      projectId,
-      input: task.input,
-      scenario,
-      taskScore: task.score ?? undefined,
-      callbackUrl: `${apiBaseUrl}/api/internal/callback`,
-      projectProfile: {
-        companyName: profile.companyName,
-        description: profile.description,
-        niche: profile.niche,
-        geography: profile.geography,
-        products: profile.products as object[],
-        audience: profile.audience as object[],
-        usp: profile.usp,
-        competitors: profile.competitors as object[],
-        tov: profile.tov as unknown as ToneOfVoice,
-        keywords: profile.keywords,
-        forbidden: profile.forbidden,
-      },
-    }
-
-    const markTriggerFailed = async () => {
-      await withProjectContext(projectId, userId, async (tx) => {
-        await tx.execution.update({
-          where: { id: execution.id },
-          data: { status: ExecutionStatus.FAILED, finishedAt: new Date() },
-        })
-        await tx.task.update({
-          where: { id: taskId },
-          data: { status: TaskStatus.FAILED },
-        })
-      })
-    }
-
-    try {
-      const triggerResponse = await fetch(`${n8nWebhookUrl}/orchestrator`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-N8N-API-KEY': process.env.N8N_API_KEY ?? '',
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (!triggerResponse.ok) {
-        const details = await triggerResponse.text().catch(() => '')
-        await markTriggerFailed()
-        app.log.error(
-          { status: triggerResponse.status, details, executionId: execution.id },
-          'n8n webhook rejected task execution'
-        )
-        return reply.code(502).send({
-          error: 'Failed to trigger n8n webhook',
-          code: 'N8N_TRIGGER_FAILED',
-          details: { status: triggerResponse.status },
-        })
-      }
-    } catch (err) {
-      await markTriggerFailed()
-      app.log.error({ err, executionId: execution.id }, 'Failed to trigger n8n webhook')
-      return reply.code(502).send({
-        error: 'Failed to trigger n8n webhook',
-        code: 'N8N_TRIGGER_FAILED',
-      })
-    }
-
-    return reply.code(202).send({ data: execution })
+    return reply.code(202).send({ data: started.execution })
   })
 
   // GET /api/projects/:projectId/tasks/:taskId/stream (SSE)
