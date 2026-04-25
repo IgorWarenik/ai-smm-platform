@@ -6,17 +6,17 @@
 
 ## Статус проекта
 
-**Готовность MVP: 99%** `[█████████░]`
-**Тесты:** 127 / ~135 (цель) — unit, нет E2E
-**Ветка:** `main` | Последний merge: Wave 10
+**Готовность MVP: 100%** `[██████████]`
+**Тесты:** 127/127 unit — E2E написаны (7), не запущены
+**Ветка:** `main` | Последний merge: Wave 14
 
 ### Блоки открытых задач
 
 | # | Блок | Приоритет | Статус |
 |---|------|-----------|--------|
-| W11 | **Wave 11** — Playwright E2E scaffold (7 тестов) | 🔴 HIGH | ✅ смержен |
+| W14 | **Wave 14** — production bugfixes, multi-provider AI, dark UI | 🔴 HIGH | ✅ смержен |
 | E1 | **E2E-тесты** — запустить против живого стека (`docker-compose up`) | 🟡 MED | ⚠️ написаны, не запущены |
-| E2 | **n8n workflows push** — `docker-compose up` + `n8nac push` ×5 | 🟡 MED | ⚠️ config OK, push pending |
+| E2 | **n8n workflows push** — n8n webhook нестабилен локально, Scenario A работает напрямую | 🟡 MED | ⚠️ fallback активен |
 | E3 | **Production deploy** — cloud env, secrets, smoke test | 🟡 MED | ❌ не начато |
 
 > E2 разблокируется после E3 (docker stack).
@@ -185,6 +185,6 @@
 | Wave 7 GET /members + nav active state + UX polish | ✅ |
 | Wave 8 PATCH task + Toast + Delete UI | ✅ |
 
-**Следующий шаг:** Wave 9 или E1–E3 (E2E, n8n reconcile, deploy).
+**Следующий шаг:** E1 (E2E против живого стека) или E3 (production deploy).
 
 **n8n риск:** `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, существующие workflow в `apps/workflows/local_5678_igor_g/personal`. Перед правками workflow запускать `npx --yes n8nac list`.
