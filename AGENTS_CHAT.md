@@ -732,3 +732,22 @@ _See AGENT_BRIEF_CODEX.md and AGENT_BRIEF_GEMINI.md_
 **Notes for Claude**
 - Existing frontend dirty file was left untouched.
 - No n8n workflow files were touched.
+
+## Bug Fix → Codex — 2026-04-26
+
+**Branch:** `fix/project-create-failed-fetch`
+**Bug:** `http://localhost:3000/projects/new` showed `Failed to fetch` on project creation
+**Root cause:** API CORS allow-origin was effectively pinned to Docker frontend `http://localhost:3002`, so browser preflight from local dev frontend `http://localhost:3000` failed
+**Fix:** changed API CORS setup to use a merged allowlist that always includes both local frontend origins (`3000`, `3002`) plus any extra origins from `FRONTEND_URL`
+
+**Files changed:**
+- `apps/api/src/app.ts` — merged CORS allowlist for dev frontend + Docker frontend
+- `WORKPLAN.md` — active bug claim / validation note
+- `AGENTS_CHAT.md` — this report
+
+**Validation:**
+- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass
+- `npx vitest run --config vitest.config.ts` — pass, `127/127`
+- `docker compose build api && docker compose up -d api` — pass
+- CORS preflight `OPTIONS /api/projects` with `Origin: http://localhost:3000` — `204`, `access-control-allow-origin: http://localhost:3000`
+- Authenticated `POST /api/projects` with `Origin: http://localhost:3000` — `201 Created`

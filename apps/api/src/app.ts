@@ -15,6 +15,19 @@ import { callbackRoutes } from './routes/callback'
 import { modelConfigRoutes } from './routes/model-config'
 import { renderTokenPrometheusMetrics } from '@ai-marketing/ai-engine'
 
+function resolveAllowedOrigins() {
+  const configuredOrigins = process.env.FRONTEND_URL
+    ?.split(',')
+    .map(origin => origin.trim())
+    .filter(Boolean)
+
+  return Array.from(new Set([
+    'http://localhost:3000',
+    'http://localhost:3002',
+    ...(configuredOrigins ?? []),
+  ]))
+}
+
 export async function buildApp() {
   const app = Fastify({
     logger: process.env.NODE_ENV !== 'test',
@@ -22,7 +35,7 @@ export async function buildApp() {
 
   // ─── Plugins ───────────────────────────────────────────────
   await app.register(cors, {
-    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+    origin: resolveAllowedOrigins(),
     credentials: true,
   })
   await app.register(sensible)

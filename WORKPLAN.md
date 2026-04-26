@@ -15,25 +15,19 @@
 | # | Блок | Приоритет | Статус |
 |---|------|-----------|--------|
 | W14 | **Wave 14** — production bugfixes, multi-provider AI, dark UI | 🔴 HIGH | ✅ смержен |
-| E1 | **E2E-тесты** — запустить против живого стека (`docker-compose up`) | 🟡 MED | ⚠️ написаны, не запущены |
-| E2 | **n8n workflows push** — n8n webhook нестабилен локально, Scenario A работает напрямую | 🟡 MED | ⚠️ fallback активен |
+| E1 | **E2E-тесты** — запустить против живого стека (`docker-compose up`) | 🟡 MED | ✅ пройдены локально: 7/7 Playwright |
+| E2 | **n8n workflows push** — n8n webhook нестабилен локально, Scenario A работает напрямую | 🟡 MED | ✅ pushed + activated после Docker reset |
 | E3 | **Production deploy** — cloud env, secrets, smoke test | 🟡 MED | ❌ не начато |
 
-> E2 разблокируется после E3 (docker stack).
+> После Docker reset локальный стек снова рабочий; E1 теперь разблокирован.
 
 ### n8n статус (E2)
 
-- `n8nac-config.json` → `local_5678_igor_g` ✅ верно
-- Stale `local_5678_fa9037/` → удалена ✅
-- 5 workflows — `EXIST_ONLY_LOCALLY`, никогда не пушились в n8n
-- **Когда n8n запустится** (после `docker-compose up`):
-  ```bash
-  npx n8nac push apps/workflows/local_5678_igor_g/personal/orchestrator.workflow.ts
-  npx n8nac push apps/workflows/local_5678_igor_g/personal/scenario-a.workflow.ts
-  npx n8nac push apps/workflows/local_5678_igor_g/personal/scenario-b.workflow.ts
-  npx n8nac push apps/workflows/local_5678_igor_g/personal/scenario-c.workflow.ts
-  npx n8nac push apps/workflows/local_5678_igor_g/personal/scenario-d.workflow.ts
-  ```
+- `n8nac-config.json` → `local_5678_igor_g` ✅ активен после re-init
+- n8n owner bootstrap выполнен после чистой БД (`igor@local.dev`), новый Public API key выпущен для локального sync
+- 5 workflows — `TRACKED` в `n8nac list`
+- 5 workflows — `active = true` в n8n
+- Smoke test: `POST http://localhost:5678/webhook/orchestrator` → `200 {"message":"Workflow was started"}`
 
 ---
 
@@ -167,9 +161,14 @@
 
 ---
 
-## Текущая задача (Wave 8 — 2026-04-21)
+## Текущая задача (Local stack recovery — 2026-04-25)
 
-**Статус:** Waves 1–8 ✅ смержены. 125/125 тестов.
+**Статус:** Docker Desktop после destructive reset восстановлен; стек поднят; n8n re-init выполнен; workflows pushed + activated; E2E на живом стеке зелёные.
+
+**Active bug fix owner:** Codex
+- intent: исправить `Failed to fetch` на `http://localhost:3000/projects/new` при создании проекта
+- likely files: `apps/api/src/app.ts`, возможно env/CORS docs если потребуется
+- expected validation: `tsc api`, `vitest`, CORS `curl` preflight from `Origin: http://localhost:3000`, create-project smoke
 
 | Этап | Статус |
 |------|--------|
@@ -185,6 +184,17 @@
 | Wave 7 GET /members + nav active state + UX polish | ✅ |
 | Wave 8 PATCH task + Toast + Delete UI | ✅ |
 
-**Следующий шаг:** E1 (E2E против живого стека) или E3 (production deploy).
+**Следующий шаг:** E3 — production deploy / cloud env / smoke test.
 
-**n8n риск:** `n8nac-config.json` указывает `apps/workflows/local_5678_fa9037/personal`, существующие workflow в `apps/workflows/local_5678_igor_g/personal`. Перед правками workflow запускать `npx --yes n8nac list`.
+**n8n риск:** после reset появились служебные локальные артефакты `n8nac` и stale workflow folders; перед cleanup или новыми правками workflow сначала смотреть `npx --yes n8nac list` и активный `workflowDir` в `n8nac-config.json`.
+
+**E2E note:** в `apps/e2e/tests/` обновлены 2 ожидания под текущий UI:
+- login error assertion теперь проверяет текст `Invalid credentials`
+- placeholder task form теперь `Describe the campaign, channel, and result you need...`
+
+**Latest bug fix (2026-04-26, Codex):**
+- bug: `Failed to fetch` на `http://localhost:3000/projects/new` при `Create Project`
+- root cause: CORS в API разрешал Docker frontend `http://localhost:3002`, но не локальный dev frontend `http://localhost:3000`
+- files touched: `apps/api/src/app.ts`, `AGENTS_CHAT.md`, `WORKPLAN.md`
+- validation: `tsc api` pass, `vitest 127/127` pass, preflight from `Origin: http://localhost:3000` → `204`, authenticated `POST /api/projects` from `3000` origin → `201`
+- next step: если пользователь продолжит работать через `3000`, можно отдельно прогнать UI smoke в браузере для `/projects/new`
