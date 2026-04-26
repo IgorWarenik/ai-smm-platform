@@ -8,7 +8,7 @@ import AppShell from '@/components/layout/AppShell'
 import StatusBadge from '@/components/StatusBadge'
 import AgentAvatar from '@/components/AgentAvatar'
 import ApprovalPanel from '@/components/ApprovalPanel'
-import { Trash2 } from 'lucide-react'
+import { LayoutGrid, List, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 type Task = {
@@ -22,6 +22,13 @@ type Task = {
 }
 
 const STATUSES = ['ALL', 'RUNNING', 'AWAITING_APPROVAL', 'AWAITING_CLARIFICATION', 'COMPLETED', 'FAILED']
+const KANBAN_COLUMNS: Array<{ key: string; label: string; statuses: string[] }> = [
+  { key: 'incoming', label: 'Входящие', statuses: ['PENDING', 'QUEUED'] },
+  { key: 'in-progress', label: 'В работе', statuses: ['RUNNING', 'AWAITING_CLARIFICATION'] },
+  { key: 'approval', label: 'На согласовании', statuses: ['AWAITING_APPROVAL', 'REVISION_REQUESTED'] },
+  { key: 'done', label: 'Готово', statuses: ['COMPLETED', 'APPROVED'] },
+  { key: 'rejected', label: 'Отклонено', statuses: ['FAILED', 'REJECTED'] },
+]
 
 function mergeTask(existing: Task | undefined, incoming: Task): Task {
   if (!existing) return incoming
@@ -207,6 +214,7 @@ function TasksPageInner() {
   const [loading, setLoading] = useState(true)
   const [statusFilter, setStatusFilter] = useState('ALL')
   const [selectedId, setSelectedId] = useState<string | null>(initialSelected)
+  const [view, setView] = useState<'list' | 'kanban'>('list')
 
   const selectedTask = tasks.find(t => t.id === selectedId)
 
@@ -267,22 +275,52 @@ function TasksPageInner() {
         </a>
       </div>
 
-      {/* Status filter */}
-      <div className="flex flex-wrap gap-1.5">
-        {STATUSES.map(s => (
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap gap-1.5">
+          {STATUSES.map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={cn(
+                'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                statusFilter === s
+                  ? 'border-primary bg-primary text-primary-foreground'
+                  : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+              )}
+            >
+              {s === 'ALL' ? 'Все' : s.replace(/_/g, ' ')}
+            </button>
+          ))}
+        </div>
+
+        <div className="flex rounded-md border border-border overflow-hidden">
           <button
-            key={s}
-            onClick={() => setStatusFilter(s)}
+            onClick={() => setView('list')}
             className={cn(
-              'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-              statusFilter === s
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+              'flex items-center gap-1.5 px-3 py-1.5 text-xs transition-colors',
+              view === 'list'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
             )}
+            title="Список"
           >
-            {s === 'ALL' ? 'Все' : s.replace(/_/g, ' ')}
+            <List size={14} />
+            <span>List</span>
           </button>
-        ))}
+          <button
+            onClick={() => setView('kanban')}
+            className={cn(
+              'flex items-center gap-1.5 border-l border-border px-3 py-1.5 text-xs transition-colors',
+              view === 'kanban'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground'
+            )}
+            title="Канбан"
+          >
+            <LayoutGrid size={14} />
+            <span>Kanban</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
@@ -294,7 +332,7 @@ function TasksPageInner() {
               <p className="text-sm text-muted-foreground">Нет задач</p>
             </div>
           )}
-          {tasks.map(t => (
+          {!loading && view === 'list' && tasks.map(t => (
             <div key={t.id} className="group relative">
               <button
                 onClick={() => setSelectedId(t.id)}
@@ -322,6 +360,59 @@ function TasksPageInner() {
               </button>
             </div>
           ))}
+
+          {!loading && view === 'kanban' && tasks.length > 0 && (
+            <div className="overflow-x-auto pb-2">
+              <div className="flex min-w-max gap-4">
+                {KANBAN_COLUMNS.map((column) => {
+                  const columnTasks = tasks.filter((task) => column.statuses.includes(task.status))
+
+                  return (
+                    <div key={column.key} className="w-[280px] shrink-0 rounded-lg border border-border bg-muted/30 p-3">
+                      <div className="mb-3 flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-foreground">{column.label}</p>
+                        <span className="rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground">
+                          {columnTasks.length}
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {columnTasks.length === 0 && (
+                          <div className="rounded-lg border border-dashed border-border bg-card/60 p-4 text-center">
+                            <p className="text-xs text-muted-foreground">Пусто</p>
+                          </div>
+                        )}
+
+                        {columnTasks.map((task) => (
+                          <button
+                            key={task.id}
+                            onClick={() => setSelectedId(task.id)}
+                            className={cn(
+                              'w-full rounded-lg border bg-card p-3 text-left transition-colors',
+                              selectedId === task.id
+                                ? 'border-primary/50 bg-accent/40'
+                                : 'border-border hover:border-primary/30 hover:bg-accent/20'
+                            )}
+                          >
+                            <div className="mb-2 flex items-center gap-2">
+                              <StatusBadge status={task.status} />
+                              <span className="ml-auto text-[11px] text-muted-foreground">
+                                {new Date(task.createdAt).toLocaleDateString('ru-RU')}
+                              </span>
+                            </div>
+                            <p className="line-clamp-3 text-sm text-foreground">
+                              {task.input.slice(0, 60)}
+                              {task.input.length > 60 ? '…' : ''}
+                            </p>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Task detail */}
