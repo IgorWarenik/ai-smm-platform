@@ -1,37 +1,22 @@
 'use client'
-import Link from 'next/link'
-import { useParams, usePathname } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
+import { useEffect } from 'react'
 
-export default function ProjectLayout({ children }: { children: React.ReactNode }) {
-    const { id } = useParams() as { id: string }
-    const pathname = usePathname()
+export default function OldProjectLayout({ children }: { children: React.ReactNode }) {
+  const { id } = useParams() as { id: string }
+  const router = useRouter()
 
-    const navLinks = [
-        { href: `/projects/${id}`, label: 'Tasks', exact: true },
-        { href: `/projects/${id}/profile`, label: 'Profile' },
-        { href: `/projects/${id}/knowledge`, label: 'Knowledge' },
-    ]
+  useEffect(() => {
+    if (typeof window !== 'undefined' && id) {
+      const stored = localStorage.getItem('active_project')
+      if (!stored) {
+        try {
+          localStorage.setItem('active_project', JSON.stringify({ id, name: id }))
+        } catch { }
+      }
+      router.replace('/tasks')
+    }
+  }, [id, router])
 
-    return (
-        <div className="space-page">
-            <nav className="space-nav">
-                {navLinks.map(({ href, label, exact }) => {
-                    const active = exact ? pathname === href : pathname.startsWith(href)
-                    return (
-                        <Link key={href} href={href}
-                            className={`nav-link ${active ? 'nav-link-active' : ''}`}>
-                            {label}
-                        </Link>
-                    )
-                })}
-                <Link href="/dashboard"
-                    className="nav-link ml-auto">
-                    Dashboard
-                </Link>
-            </nav>
-            <main className="space-container-wide">
-                {children}
-            </main>
-        </div>
-    )
+  return <>{children}</>
 }
