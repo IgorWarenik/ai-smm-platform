@@ -3,9 +3,11 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiFetch } from '@/lib/api'
+import { useProject } from '@/contexts/project'
 
 export default function NewProjectPage() {
   const router = useRouter()
+  const { setActiveProject } = useProject()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [error, setError] = useState('')
@@ -16,52 +18,72 @@ export default function NewProjectPage() {
     setError('')
     setLoading(true)
     try {
-      const { data } = await apiFetch<{ data: { id: string } }>('/api/projects', {
+      const { data } = await apiFetch<{ data: { id: string; name: string; description?: string } }>('/api/projects', {
         method: 'POST',
         body: JSON.stringify({ name, description: description || undefined }),
       })
-      router.push(`/projects/${data.id}`)
+      setActiveProject({ id: data.id, name: data.name, description: data.description })
+      router.push('/dashboard')
     } catch (err: any) {
-      setError(err.message ?? 'Failed to create project')
+      setError(err.message ?? 'Ошибка создания проекта')
     } finally {
       setLoading(false)
     }
   }
 
   return (
-    <div className="space-page">
-      <div className="space-container">
-        <div className="mb-8 flex items-center justify-between gap-4">
-          <div>
-            <Link href="/dashboard" className="muted-text text-sm hover:text-white">← Dashboard</Link>
-            <h1 className="page-title mt-2">New Project</h1>
+    <div className="flex min-h-screen items-start justify-center bg-background px-4 pt-16">
+      <div className="w-full max-w-md">
+        <div className="mb-6">
+          <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
+            ← Назад
+          </Link>
+          <h1 className="mt-3 text-[22px] font-medium text-foreground">Новый проект</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Создайте рабочее пространство для маркетинга</p>
+        </div>
+
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">
+              Название <span className="text-destructive">*</span>
+            </label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => setName(e.target.value)}
+              required
+              autoFocus
+              placeholder="Название проекта"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 transition-all"
+            />
           </div>
-        </div>
-        <div className="glass-panel p-6">
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div>
-              <label className="field-label">Project Name <span className="text-rose-300">*</span></label>
-              <input type="text" value={name} onChange={e => setName(e.target.value)} required
-                className="field"
-                placeholder="My Marketing Campaign" />
-            </div>
-            <div>
-              <label className="field-label">Description</label>
-              <textarea value={description} onChange={e => setDescription(e.target.value)} rows={3}
-                className="field"
-                placeholder="What is this project about?" />
-            </div>
-            {error && <p className="text-sm text-rose-300">{error}</p>}
-            <div className="flex gap-3">
-              <button type="submit" disabled={loading} className="btn-primary">
-                {loading ? 'Creating...' : 'Create Project'}
-              </button>
-              <Link href="/dashboard" className="btn-secondary">
-                Cancel
-              </Link>
-            </div>
-          </form>
-        </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-foreground">Описание</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              rows={3}
+              placeholder="Краткое описание проекта"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 transition-all resize-none"
+            />
+          </div>
+          {error && <p className="text-sm text-destructive">{error}</p>}
+          <div className="flex gap-3">
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
+            >
+              {loading ? 'Создание...' : 'Создать проект'}
+            </button>
+            <Link
+              href="/dashboard"
+              className="rounded-md border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Отмена
+            </Link>
+          </div>
+        </form>
       </div>
     </div>
   )
