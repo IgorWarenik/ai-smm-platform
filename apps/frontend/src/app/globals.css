@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer components {
+  .hero-orb {
+    @apply absolute rounded-full blur-3xl opacity-30 pointer-events-none;
+  }
+
+  .panel-surface {
+    @apply bg-card border border-border;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

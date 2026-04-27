@@ -22,6 +22,14 @@ type Task = {
 }
 
 const STATUSES = ['ALL', 'RUNNING', 'AWAITING_APPROVAL', 'AWAITING_CLARIFICATION', 'COMPLETED', 'FAILED']
+const STATUS_LABELS: Record<string, string> = {
+  ALL: 'Все',
+  RUNNING: 'В работе',
+  AWAITING_APPROVAL: 'На согласовании',
+  AWAITING_CLARIFICATION: 'Уточнение',
+  COMPLETED: 'Готово',
+  FAILED: 'Ошибка',
+}
 const KANBAN_COLUMNS: Array<{ key: string; label: string; statuses: string[] }> = [
   { key: 'incoming', label: 'Входящие', statuses: ['PENDING', 'QUEUED'] },
   { key: 'in-progress', label: 'В работе', statuses: ['RUNNING', 'AWAITING_CLARIFICATION'] },
@@ -288,7 +296,7 @@ function TasksPageInner() {
                   : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
               )}
             >
-              {s === 'ALL' ? 'Все' : s.replace(/_/g, ' ')}
+              {STATUS_LABELS[s] ?? s}
             </button>
           ))}
         </div>
@@ -305,7 +313,7 @@ function TasksPageInner() {
             title="Список"
           >
             <List size={14} />
-            <span>List</span>
+            <span>Список</span>
           </button>
           <button
             onClick={() => setView('kanban')}
@@ -318,7 +326,7 @@ function TasksPageInner() {
             title="Канбан"
           >
             <LayoutGrid size={14} />
-            <span>Kanban</span>
+            <span>Канбан</span>
           </button>
         </div>
       </div>
