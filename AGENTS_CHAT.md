@@ -9,6 +9,30 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 17-FE → Codex
+
+**Branch**
+- `agent/wave-17-fe`
+
+**Files changed**
+- `apps/frontend/src/app/project/knowledge/page.tsx`
+- `AGENTS_CHAT.md`
+
+**What was done**
+- Extended `KItem.metadata` with optional `sourceFile`.
+- Grouped uploaded file chunks by `metadata.sourceFile` in the right knowledge panel.
+- Rendered file-group cards before standalone text items.
+- Added grouped file deletion with confirmation and one DELETE call per chunk.
+- Kept text item inline delete/edit behavior unchanged.
+
+**Validation**
+- `npx tsc --noEmit -p apps/frontend/tsconfig.json 2>&1 | head -10` — pass, no output.
+- `npx vitest run --config vitest.config.ts 2>&1 | tail -5` — pass, `10 files / 130 tests`.
+- `npm --prefix apps/frontend run build` — pass.
+
+**Open questions / TODO**
+- None.
+
 ## Wave 14 → Codex — DONE
 
 **Branch:** `agent/bugfix-v1`

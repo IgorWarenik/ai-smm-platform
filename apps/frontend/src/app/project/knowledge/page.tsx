@@ -4,10 +4,10 @@ import { apiFetch } from '@/lib/api'
 import { useProject } from '@/contexts/project'
 import AppShell from '@/components/layout/AppShell'
 import FileDropzone from '@/components/FileDropzone'
-import { Trash2, Edit2, Check, X as XIcon, Search } from 'lucide-react'
+import { Trash2, Edit2, Check, X as XIcon, Search, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type KItem = { id: string; category: string; content: string; metadata?: { title?: string } }
+type KItem = { id: string; category: string; content: string; metadata?: { title?: string; sourceFile?: string } }
 type Tab = 'text' | 'upload'
 
 const CATEGORIES = ['FRAMEWORK', 'CASE', 'TEMPLATE', 'SEO', 'PLATFORM_SPEC', 'BRAND_GUIDE']
@@ -82,6 +82,17 @@ function KnowledgePageInner() {
     } catch (err: any) { setError(err.message) }
   }
 
+  const handleDeleteFile = async (sourceFile: string, fileItems: KItem[]) => {
+    if (!activeProject) return
+    if (!confirm(`Удалить файл «${sourceFile}» и все его фрагменты (${fileItems.length} шт.)?`)) return
+    try {
+      for (const item of fileItems) {
+        await apiFetch(`/api/projects/${activeProject.id}/knowledge/${item.id}`, { method: 'DELETE' })
+      }
+      fetch_()
+    } catch (err: any) { setError(err.message) }
+  }
+
   const handleEdit = async (id: string) => {
     if (!activeProject || !editContent.trim()) return
     try {
@@ -120,6 +131,16 @@ function KnowledgePageInner() {
   if (!activeProject) {
     return <div className="py-10 text-center text-sm text-muted-foreground"><a href="/dashboard" className="hover:underline">Выберите проект</a></div>
   }
+
+  const fileGroups = items
+    .filter(i => i.metadata?.sourceFile)
+    .reduce<Record<string, KItem[]>>((acc, i) => {
+      const key = i.metadata!.sourceFile!
+      acc[key] = [...(acc[key] ?? []), i]
+      return acc
+    }, {})
+
+  const textItems = items.filter(i => !i.metadata?.sourceFile)
 
   return (
     <div className="space-y-6">
@@ -263,7 +284,34 @@ function KnowledgePageInner() {
             </div>
           ) : (
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-              {items.map(item => (
+              {Object.entries(fileGroups).map(([sourceFile, fileItems]) => (
+                <div key={sourceFile} className="rounded-lg border border-border bg-card p-4">
+                  <div className="flex items-start gap-3">
+                    <FileText size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1 space-y-2">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                          {sourceFile}
+                        </span>
+                        <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                          {fileItems[0]?.category}
+                        </span>
+                        <button
+                          onClick={() => handleDeleteFile(sourceFile, fileItems)}
+                          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                          aria-label={`Удалить файл ${sourceFile}`}
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                      <span className="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground">
+                        {fileItems.length} фрагментов
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {textItems.map(item => (
                 <div key={item.id} className="rounded-lg border border-border bg-card p-4">
                   <div className="mb-2 flex items-center gap-2">
                     <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
