@@ -9,42 +9,43 @@ async function loginNew(page: Parameters<Parameters<typeof test>[1]>[0]) {
   await page.locator('input[type="text"]').fill('E2E Tester')
   await page.locator('input[type="email"]').fill(uniqueEmail())
   await page.locator('input[type="password"]').fill('password123!')
-  await page.getByRole('button', { name: 'Register' }).click()
+  await page.getByRole('button', { name: 'Зарегистрироваться' }).click()
   await page.waitForURL('/dashboard')
 }
 
 test.describe('Projects', () => {
   test('new user sees empty state', async ({ page }) => {
     await loginNew(page)
-    await expect(page.getByText('No projects yet')).toBeVisible()
+    await expect(page.getByText('Нет проектов')).toBeVisible()
   })
 
   test('create project → visible in dashboard', async ({ page }) => {
     await loginNew(page)
 
-    await page.getByRole('link', { name: 'New Project' }).click()
+    await page.getByRole('link', { name: 'Новый проект' }).first().click()
     await page.waitForURL('/projects/new')
 
     const projectName = `E2E Project ${Date.now()}`
-    await page.getByPlaceholder('My Marketing Campaign').fill(projectName)
-    await page.getByRole('button', { name: 'Create Project' }).click()
+    await page.getByPlaceholder('Название проекта').fill(projectName)
+    await page.getByRole('button', { name: 'Создать проект' }).click()
 
-    await page.waitForURL(/\/projects\/[0-9a-f-]+$/)
+    await page.waitForURL('/dashboard')
 
-    await page.goto('/dashboard')
     await expect(page.getByText(projectName)).toBeVisible()
   })
 
   test('project page shows task creation form', async ({ page }) => {
     await loginNew(page)
 
-    await page.getByRole('link', { name: 'New Project' }).click()
-    await page.getByPlaceholder('My Marketing Campaign').fill('Task Form Test')
-    await page.getByRole('button', { name: 'Create Project' }).click()
-    await page.waitForURL(/\/projects\/[0-9a-f-]+$/)
+    await page.getByRole('link', { name: 'Новый проект' }).first().click()
+    await page.waitForURL('/projects/new')
+    await page.getByPlaceholder('Название проекта').fill('Task Form Test')
+    await page.getByRole('button', { name: 'Создать проект' }).click()
 
-    await expect(page.getByRole('heading', { name: 'New Task' })).toBeVisible()
-    await expect(page.getByPlaceholder('Describe the campaign, channel, and result you need...')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Create Task' })).toBeVisible()
+    await page.waitForURL('/dashboard')
+
+    // Navigate to tasks page to verify task creation is available
+    await page.getByRole('link', { name: 'Задачи' }).click()
+    await expect(page.getByRole('button', { name: '+ Новая задача' })).toBeVisible()
   })
 })
