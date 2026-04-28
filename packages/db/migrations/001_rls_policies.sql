@@ -10,7 +10,7 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 -- ─── Add vector embedding column to knowledge_items ─────────
 -- Prisma cannot declare vector type — managed here directly
 ALTER TABLE knowledge_items
-  ADD COLUMN IF NOT EXISTS embedding vector(1024);
+  ADD COLUMN IF NOT EXISTS embedding vector(512);
 
 CREATE INDEX IF NOT EXISTS knowledge_items_embedding_idx
   ON knowledge_items

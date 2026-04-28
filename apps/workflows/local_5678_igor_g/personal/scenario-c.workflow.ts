@@ -2,66 +2,80 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
 // Workflow : Scenario C — Parallel Orchestration
-// Nodes   : 7  |  Connections: 6
+// Nodes   : 7  |  Connections: 7
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
 // Property name                    Node type (short)         Flags
-// WebhookTrigger                   webhook
-// FetchRAG                         code         (single fetch before fan-out)
-// SplitInput                       code
-// RunMarketer                      code         (parallel branch 1)
-// RunContentMaker                  code         (parallel branch 2)
-// MergeResults                     code
-// SendFinalCallback                httpRequest
+// WebhookTrigger                     webhook
+// FetchRag                           code
+// SplitInput                         code
+// RunMarketer                        code
+// RunContentMaker                    code
+// MergeResults                       code
+// SendFinalCallback                  httpRequest
 //
 // ROUTING MAP
 // ──────────────────────────────────────────────────────────────────
-// WebhookTrigger → FetchRAG → SplitInput
-//   SplitInput.out(0) → RunMarketer   → MergeResults
-//   SplitInput.out(0) → RunContentMaker → MergeResults
-// MergeResults → SendFinalCallback
+// WebhookTrigger
+//    → FetchRag
+//      → SplitInput
+//        → RunMarketer
+//          → MergeResults
+//            → SendFinalCallback
+//        → RunContentMaker
+//          → MergeResults (↩ loop)
 // </workflow-map>
 
+// =====================================================================
+// METADATA DU WORKFLOW
+// =====================================================================
+
 @workflow({
-  id: '',
-  name: 'Scenario C — Parallel Orchestration',
-  active: false,
-  settings: { executionOrder: 'v1' }
+    id: 'FHQ2xQ3gPviFJLrF',
+    name: 'Scenario C — Parallel Orchestration',
+    active: false,
+    isArchived: false,
+    settings: { executionOrder: 'v1' },
 })
-export class ScenarioCWorkflow {
+export class ScenarioCParallelOrchestrationWorkflow {
+    // =====================================================================
+    // CONFIGURATION DES NOEUDS
+    // =====================================================================
 
-  @node({
-    name: 'Webhook Trigger',
-    type: 'n8n-nodes-base.webhook',
-    version: 2.1,
-    position: [0, 0]
-  })
-  WebhookTrigger = {
-    responseBinaryPropertyName: 'data',
-    httpMethod: 'POST',
-    path: 'scenario-c',
-    responseMode: 'onReceived',
-    responseCode: 202,
-  };
+    @node({
+        id: '5fca9abc-aae9-400b-8ed0-76df04144084',
+        webhookId: 'd97fbdd9-fa83-482d-ba8a-9b2628b41dd9',
+        name: 'Webhook Trigger',
+        type: 'n8n-nodes-base.webhook',
+        version: 2.1,
+        position: [0, 0],
+    })
+    WebhookTrigger = {
+        responseBinaryPropertyName: 'data',
+        httpMethod: 'POST',
+        path: 'scenario-c',
+        responseMode: 'onReceived',
+        responseCode: 202,
+    };
 
-  // Fetch RAG once before fan-out — avoids duplicate knowledge/search in parallel branches
-  @node({
-    name: 'Fetch RAG',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [220, 0]
-  })
-  FetchRAG = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: 'c78276da-87e4-4890-a8bf-d2213fc62d90',
+        name: 'Fetch RAG',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [220, 0],
+    })
+    FetchRag = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const payload = $input.first().json.body;
 const { projectId, input } = payload;
 const API_BASE_URL = $env.API_BASE_URL;
 const RAG_MAX_CHARS_PER_CHUNK = Number($env.RAG_MAX_CHARS_PER_CHUNK || 1200);
 const RAG_MAX_TOTAL_CHARS = Number($env.RAG_MAX_TOTAL_CHARS || 4000);
-const RAG_MIN_SIMILARITY = Number($env.RAG_MIN_SIMILARITY || 0.72);
+const RAG_MIN_SIMILARITY = Number($env.RAG_MIN_SIMILARITY || 0.15);
 
 // knowledge API already builds the prompt pack via buildRagPack helper — read it directly
 let ragShortlist = [];
@@ -80,19 +94,19 @@ try {
 // Spread all payload fields + RAG artifacts for downstream nodes
 return [{ json: { ...payload, ragShortlist, ragPromptPack } }];
 `,
-  };
+    };
 
-  // Fan-out: emit two identical items so both branches run simultaneously
-  @node({
-    name: 'Split Input',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [440, 0]
-  })
-  SplitInput = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: '012d6d84-9d55-4faa-b383-253cf2135f1e',
+        name: 'Split Input',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [440, 0],
+    })
+    SplitInput = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const payload = $input.first().json;
 // Return two copies — one for each agent branch; RAG artifacts already in payload
 return [
@@ -100,18 +114,19 @@ return [
   { json: { ...payload, branch: 'CONTENT_MAKER' } },
 ];
 `,
-  };
+    };
 
-  @node({
-    name: 'Run Marketer',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [660, -80]
-  })
-  RunMarketer = {
-    mode: 'runOnceForEachItem',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: '7a26b5d0-1104-427d-a6ea-53f991de2097',
+        name: 'Run Marketer',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [660, -80],
+    })
+    RunMarketer = {
+        mode: 'runOnceForEachItem',
+        language: 'javaScript',
+        jsCode: `
 const item = $input.item.json;
 if (item.branch !== 'MARKETER') return [];
 
@@ -175,18 +190,19 @@ const output = result.data?.output || '';
 
 return { json: { executionId, taskId, projectId, callbackUrl, agentType: 'MARKETER', output } };
 `,
-  };
+    };
 
-  @node({
-    name: 'Run Content Maker',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [660, 80]
-  })
-  RunContentMaker = {
-    mode: 'runOnceForEachItem',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: '6d7a9c7e-ab21-4eef-ba53-052c8644fafe',
+        name: 'Run Content Maker',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [660, 80],
+    })
+    RunContentMaker = {
+        mode: 'runOnceForEachItem',
+        language: 'javaScript',
+        jsCode: `
 const item = $input.item.json;
 if (item.branch !== 'CONTENT_MAKER') return [];
 
@@ -247,19 +263,19 @@ const output = result.data?.output || '';
 
 return { json: { executionId, taskId, projectId, callbackUrl, agentType: 'CONTENT_MAKER', output } };
 `,
-  };
+    };
 
-  // Collect both agent outputs and send a single completion callback
-  @node({
-    name: 'Merge Results',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [880, 0]
-  })
-  MergeResults = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: '99c69831-50b5-46e2-a985-5e69c39554ed',
+        name: 'Merge Results',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [880, 0],
+    })
+    MergeResults = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const items = $input.all().map(i => i.json);
 const first = items[0];
 
@@ -279,44 +295,55 @@ return [{
   }
 }];
 `,
-  };
+    };
 
-  @node({
-    name: 'Send Final Callback',
-    type: 'n8n-nodes-base.httpRequest',
-    version: 4.4,
-    position: [1100, 0]
-  })
-  SendFinalCallback = {
-    url: '={{ $json.callbackUrl.replace("/callback", "/execution-complete") }}',
-    method: 'POST',
-    sendHeaders: true,
-    headerParameters: {
-      parameters: [
-        { name: 'Content-Type', value: 'application/json' },
-        { name: 'Authorization', value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}' },
-      ]
-    },
-    sendBody: true,
-    contentType: 'json',
-    specifyBody: 'json',
-    jsonBody: {
-      executionId: '={{ $json.executionId }}',
-      agentType: 'CONTENT_MAKER',
-      output: '={{ $json.mergedOutput }}',
-      iteration: 1,
-      status: 'completed',
-    },
-  };
+    @node({
+        id: '059788b3-1625-4cb9-96b1-b63f966bd960',
+        name: 'Send Final Callback',
+        type: 'n8n-nodes-base.httpRequest',
+        version: 4.4,
+        position: [1100, 0],
+    })
+    SendFinalCallback = {
+        url: '={{ $json.callbackUrl.replace("/callback", "/execution-complete") }}',
+        method: 'POST',
+        sendHeaders: true,
+        headerParameters: {
+            parameters: [
+                {
+                    name: 'Content-Type',
+                    value: 'application/json',
+                },
+                {
+                    name: 'Authorization',
+                    value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}',
+                },
+            ],
+        },
+        sendBody: true,
+        contentType: 'json',
+        specifyBody: 'json',
+        jsonBody: {
+            executionId: '={{ $json.executionId }}',
+            agentType: 'CONTENT_MAKER',
+            output: '={{ $json.mergedOutput }}',
+            iteration: 1,
+            status: 'completed',
+        },
+    };
 
-  @links()
-  defineRouting() {
-    this.WebhookTrigger.out(0).to(this.FetchRAG.in(0));
-    this.FetchRAG.out(0).to(this.SplitInput.in(0));
-    this.SplitInput.out(0).to(this.RunMarketer.in(0));
-    this.SplitInput.out(0).to(this.RunContentMaker.in(0));
-    this.RunMarketer.out(0).to(this.MergeResults.in(0));
-    this.RunContentMaker.out(0).to(this.MergeResults.in(0));
-    this.MergeResults.out(0).to(this.SendFinalCallback.in(0));
-  }
+    // =====================================================================
+    // ROUTAGE ET CONNEXIONS
+    // =====================================================================
+
+    @links()
+    defineRouting() {
+        this.WebhookTrigger.out(0).to(this.FetchRag.in(0));
+        this.FetchRag.out(0).to(this.SplitInput.in(0));
+        this.SplitInput.out(0).to(this.RunMarketer.in(0));
+        this.SplitInput.out(0).to(this.RunContentMaker.in(0));
+        this.RunMarketer.out(0).to(this.MergeResults.in(0));
+        this.RunContentMaker.out(0).to(this.MergeResults.in(0));
+        this.MergeResults.out(0).to(this.SendFinalCallback.in(0));
+    }
 }

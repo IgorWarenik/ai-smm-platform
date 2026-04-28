@@ -8,6 +8,7 @@ import AppShell from '@/components/layout/AppShell'
 import StatusBadge from '@/components/StatusBadge'
 import AgentAvatar from '@/components/AgentAvatar'
 import ApprovalPanel from '@/components/ApprovalPanel'
+import NewTaskForm from '@/components/NewTaskForm'
 import { Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -22,6 +23,14 @@ type Task = {
 }
 
 const STATUSES = ['ALL', 'RUNNING', 'AWAITING_APPROVAL', 'AWAITING_CLARIFICATION', 'COMPLETED', 'FAILED']
+const STATUS_LABELS: Record<string, string> = {
+  ALL: 'Все',
+  RUNNING: 'В работе',
+  AWAITING_APPROVAL: 'На согласовании',
+  AWAITING_CLARIFICATION: 'Уточнение',
+  COMPLETED: 'Готово',
+  FAILED: 'Ошибка',
+}
 
 function mergeTask(existing: Task | undefined, incoming: Task): Task {
   if (!existing) return incoming
@@ -205,8 +214,9 @@ function TasksPageInner() {
 
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(true)
-  const [statusFilter, setStatusFilter] = useState('ALL')
+  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') ?? 'ALL')
   const [selectedId, setSelectedId] = useState<string | null>(initialSelected)
+  const [showNew, setShowNew] = useState(false)
 
   const selectedTask = tasks.find(t => t.id === selectedId)
 
@@ -259,88 +269,111 @@ function TasksPageInner() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-[22px] font-medium text-foreground">Задачи</h1>
-        <a
-          href="/new"
+        <button
+          type="button"
+          onClick={() => setShowNew(true)}
           className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
         >
           + Новая задача
-        </a>
+        </button>
       </div>
 
-      {/* Status filter */}
-      <div className="flex flex-wrap gap-1.5">
-        {STATUSES.map(s => (
-          <button
-            key={s}
-            onClick={() => setStatusFilter(s)}
-            className={cn(
-              'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-              statusFilter === s
-                ? 'border-primary bg-primary text-primary-foreground'
-                : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
-            )}
-          >
-            {s === 'ALL' ? 'Все' : s.replace(/_/g, ' ')}
-          </button>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
-        {/* Task list */}
-        <div className="space-y-2">
-          {loading && <p className="text-sm text-muted-foreground">Загрузка...</p>}
-          {!loading && tasks.length === 0 && (
-            <div className="rounded-lg border border-dashed border-border p-8 text-center">
-              <p className="text-sm text-muted-foreground">Нет задач</p>
+      {showNew ? (
+        <NewTaskForm
+          onSuccess={(taskId) => {
+            setShowNew(false)
+            setSelectedId(taskId)
+            fetchTasks()
+          }}
+          onCancel={() => setShowNew(false)}
+        />
+      ) : (
+        <>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-1.5">
+              {STATUSES.map(s => (
+                <button
+                  key={s}
+                  onClick={() => setStatusFilter(s)}
+                  className={cn(
+                    'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
+                    statusFilter === s
+                      ? 'border-primary bg-primary text-primary-foreground'
+                      : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
+                  )}
+                >
+                  {STATUS_LABELS[s] ?? s}
+                </button>
+              ))}
             </div>
-          )}
-          {tasks.map(t => (
-            <div key={t.id} className="group relative">
-              <button
-                onClick={() => setSelectedId(t.id)}
-                className={cn(
-                  'w-full rounded-lg border p-3.5 text-left transition-colors',
-                  selectedId === t.id
-                    ? 'border-primary/50 bg-accent/40'
-                    : 'border-border bg-card hover:border-primary/30 hover:bg-accent/20'
-                )}
-              >
-                <div className="mb-2 flex items-center gap-2">
-                  <StatusBadge status={t.status} />
-                  <span className="ml-auto text-[11px] text-muted-foreground">
-                    {new Date(t.createdAt).toLocaleDateString('ru-RU')}
-                  </span>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
+            {/* Task list */}
+            <div className="space-y-2">
+              {loading && <p className="text-sm text-muted-foreground">Загрузка...</p>}
+              {!loading && tasks.length === 0 && (
+                <div className="rounded-lg border border-dashed border-border p-8 text-center">
+                  <p className="text-sm text-muted-foreground">Нет задач</p>
                 </div>
-                <p className="line-clamp-2 text-sm text-foreground">{t.input}</p>
-              </button>
-              <button
-                onClick={e => { e.stopPropagation(); handleDelete(t.id) }}
-                className="absolute right-2.5 top-2.5 hidden h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:border-destructive/40 hover:text-destructive group-hover:flex transition-colors"
-                title="Удалить"
-              >
-                <Trash2 size={12} />
-              </button>
+              )}
+              {!loading && tasks.map(t => (
+                <div key={t.id} className="group relative">
+                  <button
+                    onClick={() => setSelectedId(t.id)}
+                    className={cn(
+                      'w-full rounded-lg border p-3.5 text-left transition-colors',
+                      selectedId === t.id
+                        ? 'border-primary/50 bg-accent/40'
+                        : 'border-border bg-card hover:border-primary/30 hover:bg-accent/20'
+                    )}
+                  >
+                    <div className="mb-2 flex items-center gap-2">
+                      <StatusBadge status={t.status} />
+                      <span className="ml-auto text-[11px] text-muted-foreground">
+                        {new Date(t.createdAt).toLocaleDateString('ru-RU')}
+                      </span>
+                    </div>
+                    <p className="line-clamp-2 text-sm text-foreground">{t.input}</p>
+                  </button>
+                  <button
+                    onClick={e => { e.stopPropagation(); handleDelete(t.id) }}
+                    className="absolute right-2.5 top-2.5 hidden h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:border-destructive/40 hover:text-destructive group-hover:flex transition-colors"
+                    title="Удалить"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
 
-        {/* Task detail */}
-        <div>
-          {selectedTask ? (
-            <div className="rounded-lg border border-border bg-card p-5">
-              <TaskDetail
-                task={selectedTask}
-                projectId={activeProject.id}
-                onRefresh={fetchTasks}
-              />
+            {/* Task detail */}
+            <div>
+              {selectedTask ? (
+                <div className="rounded-lg border border-border bg-card p-5">
+                  <div className="mb-3 flex justify-end">
+                    <button
+                      onClick={() => setSelectedId(null)}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      ✕ Закрыть
+                    </button>
+                  </div>
+                  <TaskDetail
+                    task={selectedTask}
+                    projectId={activeProject.id}
+                    onRefresh={fetchTasks}
+                  />
+                </div>
+              ) : (
+                <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed border-border">
+                  <p className="text-sm text-muted-foreground">Выберите задачу для просмотра</p>
+                </div>
+              )}
             </div>
-          ) : (
-            <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed border-border">
-              <p className="text-sm text-muted-foreground">Выберите задачу для просмотра</p>
-            </div>
-          )}
-        </div>
-      </div>
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -7,48 +7,62 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
 // Property name                    Node type (short)         Flags
-// WebhookTrigger                   webhook
-// DetectAgentType                  code
-// RunAgent                         code
-// SendCallback                     httpRequest
+// WebhookTrigger                     webhook
+// DetectAgentType                    code
+// RunAgent                           code
+// SendCallback                       httpRequest
 //
 // ROUTING MAP
 // ──────────────────────────────────────────────────────────────────
-// WebhookTrigger → DetectAgentType → RunAgent → SendCallback
+// WebhookTrigger
+//    → DetectAgentType
+//      → RunAgent
+//        → SendCallback
 // </workflow-map>
 
+// =====================================================================
+// METADATA DU WORKFLOW
+// =====================================================================
+
 @workflow({
-  id: '',
-  name: 'Scenario A — Single Agent',
-  active: false,
-  settings: { executionOrder: 'v1' }
+    id: 'cpjookc84oIWGhe0',
+    name: 'Scenario A — Single Agent',
+    active: false,
+    isArchived: false,
+    settings: { executionOrder: 'v1' },
 })
-export class ScenarioAWorkflow {
+export class ScenarioASingleAgentWorkflow {
+    // =====================================================================
+    // CONFIGURATION DES NOEUDS
+    // =====================================================================
 
-  @node({
-    name: 'Webhook Trigger',
-    type: 'n8n-nodes-base.webhook',
-    version: 2.1,
-    position: [0, 0]
-  })
-  WebhookTrigger = {
-    responseBinaryPropertyName: 'data',
-    httpMethod: 'POST',
-    path: 'scenario-a',
-    responseMode: 'onReceived',
-    responseCode: 202,
-  };
+    @node({
+        id: '54cc8afd-e77e-4f85-a222-5fa0330b8fa1',
+        webhookId: '5b69a828-dce5-455c-8a1e-f8e95a416a10',
+        name: 'Webhook Trigger',
+        type: 'n8n-nodes-base.webhook',
+        version: 2.1,
+        position: [0, 0],
+    })
+    WebhookTrigger = {
+        responseBinaryPropertyName: 'data',
+        httpMethod: 'POST',
+        path: 'scenario-a',
+        responseMode: 'onReceived',
+        responseCode: 202,
+    };
 
-  @node({
-    name: 'Detect Agent Type',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [220, 0]
-  })
-  DetectAgentType = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: '7690a161-2588-4d30-97fc-bfa90c2c8351',
+        name: 'Detect Agent Type',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [220, 0],
+    })
+    DetectAgentType = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const payload = $input.first().json.body;
 const input = payload.input || '';
 
@@ -63,18 +77,19 @@ return [{
   }
 }];
 `,
-  };
+    };
 
-  @node({
-    name: 'Run Agent',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [440, 0]
-  })
-  RunAgent = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: 'e3e87787-63b8-41bc-a695-4696fb4f49fe',
+        name: 'Run Agent',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [440, 0],
+    })
+    RunAgent = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const item = $input.first().json;
 const { executionId, taskId, projectId, input, agentType, callbackUrl, projectProfile } = item;
 const scenario = item.scenario || 'A';
@@ -87,9 +102,9 @@ const MAX_TOKENS_MARKETER_BRIEF = Number($env.MAX_TOKENS_MARKETER_BRIEF || 2400)
 const MAX_TOKENS_CONTENT_GENERATION = Number($env.MAX_TOKENS_CONTENT_GENERATION || 4096);
 const RAG_MAX_CHARS_PER_CHUNK = Number($env.RAG_MAX_CHARS_PER_CHUNK || 1200);
 const RAG_MAX_TOTAL_CHARS = Number($env.RAG_MAX_TOTAL_CHARS || 4000);
-const RAG_MIN_SIMILARITY = Number($env.RAG_MIN_SIMILARITY || 0.72);
+const RAG_MIN_SIMILARITY = Number($env.RAG_MIN_SIMILARITY || 0.15);
 const estimateTokens = (text) => Math.max(1, Math.ceil((text || '').length / 4));
-const normalizeForCache = (text) => (text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+const normalizeForCache = (text) => (text || '').toLowerCase().replace(/s+/g, ' ').trim();
 const hashString = (text) => {
   let hash = 0;
   for (let i = 0; i < text.length; i += 1) {
@@ -171,40 +186,51 @@ const output = result.data?.output || 'Agent failed to produce output';
 
 return [{ json: { executionId, taskId, projectId, agentType, output, callbackUrl } }];
 `,
-  };
+    };
 
-  @node({
-    name: 'Send Callback',
-    type: 'n8n-nodes-base.httpRequest',
-    version: 4.4,
-    position: [660, 0]
-  })
-  SendCallback = {
-    url: '={{ $json.callbackUrl }}',
-    method: 'POST',
-    sendHeaders: true,
-    headerParameters: {
-      parameters: [
-        { name: 'Content-Type', value: 'application/json' },
-        { name: 'Authorization', value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}' },
-      ]
-    },
-    sendBody: true,
-    contentType: 'json',
-    specifyBody: 'json',
-    jsonBody: {
-      executionId: '={{ $json.executionId }}',
-      agentType: '={{ $json.agentType }}',
-      output: '={{ $json.output }}',
-      iteration: 1,
-      status: 'completed',
-    },
-  };
+    @node({
+        id: 'bd7c65fd-92fe-4541-9079-682e1e1be214',
+        name: 'Send Callback',
+        type: 'n8n-nodes-base.httpRequest',
+        version: 4.4,
+        position: [660, 0],
+    })
+    SendCallback = {
+        url: '={{ $json.callbackUrl }}',
+        method: 'POST',
+        sendHeaders: true,
+        headerParameters: {
+            parameters: [
+                {
+                    name: 'Content-Type',
+                    value: 'application/json',
+                },
+                {
+                    name: 'Authorization',
+                    value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}',
+                },
+            ],
+        },
+        sendBody: true,
+        contentType: 'json',
+        specifyBody: 'json',
+        jsonBody: {
+            executionId: '={{ $json.executionId }}',
+            agentType: '={{ $json.agentType }}',
+            output: '={{ $json.output }}',
+            iteration: 1,
+            status: 'completed',
+        },
+    };
 
-  @links()
-  defineRouting() {
-    this.WebhookTrigger.out(0).to(this.DetectAgentType.in(0));
-    this.DetectAgentType.out(0).to(this.RunAgent.in(0));
-    this.RunAgent.out(0).to(this.SendCallback.in(0));
-  }
+    // =====================================================================
+    // ROUTAGE ET CONNEXIONS
+    // =====================================================================
+
+    @links()
+    defineRouting() {
+        this.WebhookTrigger.out(0).to(this.DetectAgentType.in(0));
+        this.DetectAgentType.out(0).to(this.RunAgent.in(0));
+        this.RunAgent.out(0).to(this.SendCallback.in(0));
+    }
 }

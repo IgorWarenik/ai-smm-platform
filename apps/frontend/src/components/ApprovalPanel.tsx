@@ -17,11 +17,11 @@ export default function ApprovalPanel({ projectId, taskId, agentOutputs, onDecis
 
     const submit = async (decision: 'APPROVED' | 'REVISION_REQUESTED') => {
         if (!hasOutput) {
-            setError('Output is not loaded yet')
+            setError('Результат ещё загружается')
             return
         }
         if (decision === 'REVISION_REQUESTED' && comment.trim().length < 50) {
-            setError('Revision feedback must be at least 50 characters')
+            setError('Опишите правки подробнее — минимум 50 символов')
             return
         }
         setLoading(true)
@@ -33,55 +33,55 @@ export default function ApprovalPanel({ projectId, taskId, agentOutputs, onDecis
             )
             onDecision(result)
         } catch (err: any) {
-            setError(err.message ?? 'Failed')
+            setError(err.message ?? 'Ошибка отправки решения')
         } finally {
             setLoading(false)
         }
     }
 
     return (
-        <div className="glass-panel-soft space-y-4 p-5">
-            <h3 className="section-title text-base">Review Output</h3>
+        <div className="space-y-4 rounded-lg border border-border bg-card p-5">
+            <h3 className="text-sm font-medium text-foreground">Результат агентов</h3>
 
             {hasOutput ? (
                 <div className="space-y-3">
                     {agentOutputs?.map((o, i) => (
-                        <div key={i} className="glass-panel-soft p-4">
-                            <p className="eyebrow mb-2">{o.agentType}</p>
+                        <div key={i} className="rounded-lg border border-border bg-background p-4">
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{o.agentType}</p>
                             <MarkdownContent content={o.content} />
                         </div>
                     ))}
                 </div>
             ) : (
-                <div className="glass-panel-soft p-4 text-sm muted-text">
-                    Output is loading...
+                <div className="rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
+                    Результат загружается...
                 </div>
             )}
 
             <div>
-                <label className="field-label">
-                    Feedback (required for Revision Request, min 50 chars)
+                <label className="text-xs font-medium text-muted-foreground">
+                    Комментарий (обязателен при запросе правок, мин. 50 символов)
                 </label>
                 <textarea
                     value={comment}
                     onChange={e => { setComment(e.target.value); setError('') }}
                     rows={3}
-                    className="field min-h-[110px]"
-                    placeholder="Describe what needs to be changed..."
+                    className="mt-1.5 min-h-[110px] w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/30"
+                    placeholder="Опишите что нужно изменить..."
                 />
-                <p className="muted-text mt-1 text-xs">{comment.trim().length}/50 min</p>
+                <p className="mt-1 text-xs text-muted-foreground">{comment.trim().length}/50</p>
             </div>
 
-            {error && <p className="text-sm text-rose-200">{error}</p>}
+            {error && <p className="text-sm text-destructive">{error}</p>}
 
             <div className="flex flex-wrap gap-3">
                 <button onClick={() => submit('APPROVED')} disabled={loading || !hasOutput}
-                    className="btn-primary">
-                    Approve
+                    className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
+                    {loading ? 'Отправка...' : 'Принять'}
                 </button>
                 <button onClick={() => submit('REVISION_REQUESTED')} disabled={loading || !hasOutput}
-                    className="btn-secondary">
-                    Request Revision
+                    className="rounded-md border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50">
+                    Запросить правки
                 </button>
             </div>
         </div>
@@ -110,7 +110,7 @@ function MarkdownContent({ content }: { content: string }) {
             }
             index += index < lines.length ? 1 : 0
             blocks.push(
-                <pre key={blocks.length} className="overflow-x-auto rounded-md border border-white/10 bg-black/40 p-3 text-xs leading-5 text-cyan-100">
+                <pre key={blocks.length} className="overflow-x-auto rounded-md border border-border bg-muted p-3 text-xs leading-5 text-foreground">
                     <code>{code.join('\n')}</code>
                 </pre>
             )
@@ -121,10 +121,10 @@ function MarkdownContent({ content }: { content: string }) {
         if (heading) {
             const level = heading[1].length
             const className = level === 1
-                ? 'text-xl font-bold text-white'
+                ? 'text-xl font-bold text-foreground'
                 : level === 2
-                    ? 'text-lg font-bold text-white'
-                    : 'text-base font-semibold text-zinc-100'
+                    ? 'text-lg font-bold text-foreground'
+                    : 'text-base font-semibold text-foreground'
             const Tag = (`h${Math.min(level, 4)}`) as keyof JSX.IntrinsicElements
             blocks.push(<Tag key={blocks.length} className={className}>{renderInline(heading[2])}</Tag>)
             index += 1
@@ -140,22 +140,22 @@ function MarkdownContent({ content }: { content: string }) {
                 index += 1
             }
             blocks.push(
-                <div key={blocks.length} className="overflow-x-auto rounded-md border border-white/10">
+                <div key={blocks.length} className="overflow-x-auto rounded-md border border-border">
                     <table className="min-w-full border-collapse text-left text-sm">
-                        <thead className="bg-white/[0.06] text-zinc-100">
+                        <thead className="bg-muted text-foreground">
                             <tr>
                                 {header.map((cell, cellIndex) => (
-                                    <th key={cellIndex} className="border-b border-white/10 px-3 py-2 font-semibold">
+                                    <th key={cellIndex} className="border-b border-border px-3 py-2 font-semibold">
                                         {renderInline(cell)}
                                     </th>
                                 ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-white/10">
+                        <tbody className="divide-y divide-border">
                             {rows.map((row, rowIndex) => (
                                 <tr key={rowIndex} className="align-top">
                                     {header.map((_, cellIndex) => (
-                                        <td key={cellIndex} className="px-3 py-2 text-zinc-200">
+                                        <td key={cellIndex} className="px-3 py-2 text-foreground">
                                             {renderInline(row[cellIndex] ?? '')}
                                         </td>
                                     ))}
@@ -175,7 +175,7 @@ function MarkdownContent({ content }: { content: string }) {
                 index += 1
             }
             blocks.push(
-                <ul key={blocks.length} className="list-disc space-y-1 pl-5 text-sm leading-6 text-zinc-100">
+                <ul key={blocks.length} className="list-disc space-y-1 pl-5 text-sm leading-6 text-foreground">
                     {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item)}</li>)}
                 </ul>
             )
@@ -189,7 +189,7 @@ function MarkdownContent({ content }: { content: string }) {
                 index += 1
             }
             blocks.push(
-                <ol key={blocks.length} className="list-decimal space-y-1 pl-5 text-sm leading-6 text-zinc-100">
+                <ol key={blocks.length} className="list-decimal space-y-1 pl-5 text-sm leading-6 text-foreground">
                     {items.map((item, itemIndex) => <li key={itemIndex}>{renderInline(item)}</li>)}
                 </ol>
             )
@@ -203,7 +203,7 @@ function MarkdownContent({ content }: { content: string }) {
                 index += 1
             }
             blocks.push(
-                <blockquote key={blocks.length} className="border-l-2 border-indigo-300/50 pl-4 text-sm italic leading-6 text-zinc-300">
+                <blockquote key={blocks.length} className="border-l-2 border-primary/30 pl-4 text-sm italic leading-6 text-muted-foreground">
                     {renderInline(quote.join('\n'))}
                 </blockquote>
             )
@@ -225,7 +225,7 @@ function MarkdownContent({ content }: { content: string }) {
             index += 1
         }
         blocks.push(
-            <p key={blocks.length} className="text-sm leading-6 text-zinc-100">
+            <p key={blocks.length} className="text-sm leading-6 text-foreground">
                 {renderInline(paragraph.join('\n'))}
             </p>
         )
@@ -265,20 +265,20 @@ function renderInline(text: string): ReactNode[] {
             nodes.push(<br key={key} />)
         } else if (token.startsWith('`')) {
             nodes.push(
-                <code key={key} className="rounded bg-black/40 px-1.5 py-0.5 text-[0.85em] text-cyan-100">
+                <code key={key} className="rounded bg-muted px-1.5 py-0.5 text-[0.85em] text-foreground">
                     {token.slice(1, -1)}
                 </code>
             )
         } else if (token.startsWith('**')) {
-            nodes.push(<strong key={key} className="font-semibold text-white">{token.slice(2, -2)}</strong>)
+            nodes.push(<strong key={key} className="font-semibold text-foreground">{token.slice(2, -2)}</strong>)
         } else if (token.startsWith('*')) {
-            nodes.push(<em key={key} className="italic text-zinc-100">{token.slice(1, -1)}</em>)
+            nodes.push(<em key={key} className="italic text-foreground">{token.slice(1, -1)}</em>)
         } else {
             const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/)
             const href = link?.[2] ?? '#'
             const safeHref = /^(https?:|mailto:)/.test(href) ? href : '#'
             nodes.push(
-                <a key={key} href={safeHref} target="_blank" rel="noreferrer" className="text-cyan-200 underline decoration-cyan-200/40 underline-offset-4">
+                <a key={key} href={safeHref} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4 hover:opacity-80">
                     {link?.[1] ?? token}
                 </a>
             )

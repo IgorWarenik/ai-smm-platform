@@ -1,16 +1,83 @@
 'use client'
-import { useEffect, useState } from 'react'
-import { apiFetch } from '@/lib/api'
+import { useEffect, useRef, useState } from 'react'
+import { apiFetch, apiUpload } from '@/lib/api'
 import { useProject } from '@/contexts/project'
 import AppShell from '@/components/layout/AppShell'
 import FileDropzone from '@/components/FileDropzone'
-import { Trash2, Edit2, Check, X as XIcon, Search } from 'lucide-react'
+import { Trash2, Edit2, Check, X as XIcon, Search, FileText, Loader2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
-type KItem = { id: string; category: string; content: string; metadata?: { title?: string } }
+type KItem = { id: string; category: string; content: string; hasEmbedding?: boolean; metadata?: { title?: string; sourceFile?: string; description?: string } }
+type KSearchResult = KItem & { similarity?: number }
 type Tab = 'text' | 'upload'
 
 const CATEGORIES = ['FRAMEWORK', 'CASE', 'TEMPLATE', 'SEO', 'PLATFORM_SPEC', 'BRAND_GUIDE']
+const QUERY_STOP_WORDS = new Set(['и', 'или', 'в', 'во', 'на', 'по', 'с', 'со', 'к', 'ко', 'о', 'об', 'от', 'до', 'для', 'из', 'у', 'а', 'но'])
+
+function getQueryTerms(query: string): string[] {
+  return Array.from(new Set(
+    query
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .map(term => term.trim())
+      .filter(term => term.length > 1 && !QUERY_STOP_WORDS.has(term))
+  ))
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+function getRelevantSnippet(content: string, terms: string[], maxLength = 420) {
+  const normalized = content.toLowerCase()
+  const firstHit = terms
+    .map(term => normalized.indexOf(term.toLowerCase()))
+    .filter(index => index >= 0)
+    .sort((a, b) => a - b)[0]
+
+  const center = firstHit ?? 0
+  const start = Math.max(0, center - Math.floor(maxLength / 3))
+  const end = Math.min(content.length, start + maxLength)
+
+  return {
+    text: content.slice(start, end).trim(),
+    hasExactHit: firstHit !== undefined,
+    hasPrefix: start > 0,
+    hasSuffix: end < content.length,
+  }
+}
+
+function HighlightedSnippet({ content, query }: { content: string; query: string }) {
+  const terms = getQueryTerms(query)
+  const snippet = getRelevantSnippet(content, terms)
+
+  if (!terms.length || !snippet.hasExactHit) {
+    return (
+      <span className="rounded bg-primary/10 px-1 py-0.5 text-foreground">
+        {snippet.hasPrefix ? '...' : ''}{snippet.text}{snippet.hasSuffix ? '...' : ''}
+      </span>
+    )
+  }
+
+  const matcher = new RegExp(`(${terms.map(escapeRegExp).join('|')})`, 'gi')
+  const parts = snippet.text.split(matcher)
+
+  return (
+    <span className="text-foreground">
+      {snippet.hasPrefix ? '...' : ''}
+      {parts.map((part, index) => (
+        terms.includes(part.toLowerCase()) ? (
+          <mark key={index} className="rounded bg-amber-200 px-0.5 text-foreground">
+            {part}
+          </mark>
+        ) : (
+          <span key={index}>{part}</span>
+        )
+      ))}
+      {snippet.hasSuffix ? '...' : ''}
+    </span>
+  )
+}
 
 function KnowledgePageInner() {
   const { activeProject } = useProject()
@@ -18,7 +85,8 @@ function KnowledgePageInner() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('text')
   const [query, setQuery] = useState('')
-  const [results, setResults] = useState<KItem[] | null>(null)
+  const [results, setResults] = useState<KSearchResult[] | null>(null)
+  const [searchNotReady, setSearchNotReady] = useState(false)
   const [searching, setSearching] = useState(false)
   const [error, setError] = useState('')
 
@@ -34,9 +102,11 @@ function KnowledgePageInner() {
 
   // File upload
   const [uploadFiles, setUploadFiles] = useState<File[]>([])
-  const [uploadCategory, setUploadCategory] = useState('BRAND_GUIDE')
+  const [uploadDescription, setUploadDescription] = useState('')
   const [uploading, setUploading] = useState(false)
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'uploading' | 'done' | 'error'>('idle')
+
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const fetch_ = () => {
     if (!activeProject) return
@@ -46,14 +116,33 @@ function KnowledgePageInner() {
       .finally(() => setLoading(false))
   }
 
+  // Poll every 3s while any item is missing embedding
+  useEffect(() => {
+    const hasPending = items.some(i => i.hasEmbedding === false)
+    if (hasPending) {
+      if (!pollRef.current) {
+        pollRef.current = setInterval(fetch_, 3000)
+      }
+    } else {
+      if (pollRef.current) {
+        clearInterval(pollRef.current)
+        pollRef.current = null
+      }
+    }
+    return () => {
+      if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null }
+    }
+  }, [items, activeProject?.id])
+
   useEffect(() => { fetch_() }, [activeProject?.id])
 
   const handleSearch = async () => {
-    if (!query.trim() || !activeProject) { setResults(null); return }
+    if (!query.trim() || !activeProject) { setResults(null); setSearchNotReady(false); return }
     setSearching(true)
     try {
-      const { data } = await apiFetch<any>(`/api/projects/${activeProject.id}/knowledge/search?q=${encodeURIComponent(query)}`)
-      setResults(data)
+      const res = await apiFetch<any>(`/api/projects/${activeProject.id}/knowledge/search?q=${encodeURIComponent(query)}`)
+      setSearchNotReady(!!res.notReady)
+      setResults(res.notReady ? null : res.data)
     } finally { setSearching(false) }
   }
 
@@ -82,6 +171,17 @@ function KnowledgePageInner() {
     } catch (err: any) { setError(err.message) }
   }
 
+  const handleDeleteFile = async (sourceFile: string, fileItems: KItem[]) => {
+    if (!activeProject) return
+    if (!confirm(`Удалить файл «${sourceFile}» и все его фрагменты (${fileItems.length} шт.)?`)) return
+    try {
+      for (const item of fileItems) {
+        await apiFetch(`/api/projects/${activeProject.id}/knowledge/${item.id}`, { method: 'DELETE' })
+      }
+      fetch_()
+    } catch (err: any) { setError(err.message) }
+  }
+
   const handleEdit = async (id: string) => {
     if (!activeProject || !editContent.trim()) return
     try {
@@ -101,14 +201,11 @@ function KnowledgePageInner() {
       for (const file of uploadFiles) {
         const fd = new FormData()
         fd.append('file', file)
-        fd.append('category', uploadCategory)
-        // TODO: endpoint /api/projects/:id/knowledge/upload — Wave 15c-Codex
-        await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001'}/api/projects/${activeProject.id}/knowledge/upload`,
-          { method: 'POST', body: fd }
-        ).then(r => { if (!r.ok) throw new Error('Upload failed') })
+        fd.append('description', uploadDescription)
+        await apiUpload(`/api/projects/${activeProject.id}/knowledge/upload`, fd)
       }
       setUploadFiles([])
+      setUploadDescription('')
       setUploadStatus('done')
       fetch_()
       setTimeout(() => setUploadStatus('idle'), 3000)
@@ -120,6 +217,16 @@ function KnowledgePageInner() {
   if (!activeProject) {
     return <div className="py-10 text-center text-sm text-muted-foreground"><a href="/dashboard" className="hover:underline">Выберите проект</a></div>
   }
+
+  const fileGroups = items
+    .filter(i => i.metadata?.sourceFile)
+    .reduce<Record<string, KItem[]>>((acc, i) => {
+      const key = i.metadata!.sourceFile!
+      acc[key] = [...(acc[key] ?? []), i]
+      return acc
+    }, {})
+
+  const textItems = items.filter(i => !i.metadata?.sourceFile)
 
   return (
     <div className="space-y-6">
@@ -152,15 +259,28 @@ function KnowledgePageInner() {
         )}
       </div>
 
+      {searchNotReady && (
+        <div className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
+          Файлы ещё обрабатываются — семантический поиск станет доступен после завершения индексации.
+        </div>
+      )}
+
       {results && (
         <div className="space-y-2">
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Результаты поиска ({results.length})</p>
           {results.length === 0 ? (
             <p className="text-sm text-muted-foreground">Ничего не найдено</p>
           ) : results.map((r, i) => (
-            <div key={i} className="rounded-lg border border-border bg-card p-4 text-sm">
-              <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground mr-2">{r.category}</span>
-              <span className="text-foreground">{r.content}</span>
+            <div key={i} className="rounded-lg border border-border bg-card p-4 text-sm space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">{r.category}</span>
+                {typeof r.similarity === 'number' && (
+                  <span className="text-xs text-muted-foreground">{Math.round(r.similarity * 100)}%</span>
+                )}
+              </div>
+              <p className="leading-6">
+                <HighlightedSnippet content={r.content} query={query} />
+              </p>
             </div>
           ))}
         </div>
@@ -215,11 +335,14 @@ function KnowledgePageInner() {
           ) : (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Категория</label>
-                <select value={uploadCategory} onChange={e => setUploadCategory(e.target.value)}
-                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30">
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
+                <label className="text-xs font-medium text-muted-foreground">Описание содержимого файла</label>
+                <textarea
+                  value={uploadDescription}
+                  onChange={e => setUploadDescription(e.target.value)}
+                  rows={3}
+                  placeholder="Например: описание продукта, глоссарий, материалы стратегической сессии..."
+                  className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 min-h-[88px] resize-y"
+                />
               </div>
               <FileDropzone
                 onFiles={files => setUploadFiles(prev => [...prev, ...files])}
@@ -237,7 +360,7 @@ function KnowledgePageInner() {
                 </div>
               )}
               {uploadStatus === 'done' && <p className="text-sm text-green-700">Файлы загружены и обрабатываются</p>}
-              {uploadStatus === 'error' && <p className="text-sm text-destructive">Ошибка загрузки. Endpoint Wave 15c ещё не реализован.</p>}
+              {uploadStatus === 'error' && <p className="text-sm text-destructive">Ошибка загрузки. Проверьте формат файла (PDF, DOCX, MD, TXT).</p>}
               <button
                 onClick={handleUpload}
                 disabled={uploading || !uploadFiles.length}
@@ -263,7 +386,56 @@ function KnowledgePageInner() {
             </div>
           ) : (
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
-              {items.map(item => (
+              {Object.entries(fileGroups).map(([sourceFile, fileItems]) => {
+                const allReady = fileItems.every(i => i.hasEmbedding)
+                const readyCount = fileItems.filter(i => i.hasEmbedding).length
+                return (
+                  <div key={sourceFile} className="rounded-lg border border-border bg-card p-4">
+                    <div className="flex items-start gap-3">
+                      <FileText size={14} className="mt-0.5 shrink-0 text-muted-foreground" />
+                      <div className="min-w-0 flex-1 space-y-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+                            {sourceFile}
+                          </span>
+                        <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                          {fileItems[0]?.category}
+                        </span>
+                          <button
+                            onClick={() => handleDeleteFile(sourceFile, fileItems)}
+                            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
+                            aria-label={`Удалить файл ${sourceFile}`}
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground">
+                          {fileItems.length} фрагментов
+                        </span>
+                          {allReady ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
+                              <Check size={12} />
+                              Готов к поиску
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                              <Loader2 size={12} className="animate-spin" />
+                              Обработка {readyCount}/{fileItems.length}
+                            </span>
+                        )}
+                      </div>
+                      {fileItems[0]?.metadata?.description && (
+                        <p className="text-xs text-muted-foreground leading-5">
+                          {fileItems[0].metadata.description}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                )
+              })}
+              {textItems.map(item => (
                 <div key={item.id} className="rounded-lg border border-border bg-card p-4">
                   <div className="mb-2 flex items-center gap-2">
                     <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">

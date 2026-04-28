@@ -10,7 +10,7 @@ import {
   TokenLimitExceededError,
 } from './token-monitor'
 
-const EMBEDDING_DIMENSIONS = 1024
+const EMBEDDING_DIMENSIONS = 512
 const EMBEDDING_MODEL = 'voyage-3-lite'
 const CACHE_TTL_SECONDS = Number(process.env.EMBED_CACHE_TTL_SECONDS ?? 86400)
 
@@ -52,8 +52,8 @@ async function setCachedEmbedding(key: string, embedding: number[]): Promise<voi
   }
 }
 
-// Voyage AI models produce 1024-dimensional vectors.
-// Ensure your pgvector column is: embedding vector(1024)
+// voyage-3-lite produces 512-dimensional vectors.
+// Ensure your pgvector column is: embedding vector(512)
 export { EMBEDDING_DIMENSIONS }
 
 /**
@@ -61,11 +61,7 @@ export { EMBEDDING_DIMENSIONS }
  * voyage-3-lite: cheaper, great for retrieval tasks.
  * voyage-3: higher quality, ~2x cost.
  */
-export async function embedText(text: string): Promise<number[]> {
-  const cacheKey = getCacheKey(text)
-  const cached = await getCachedEmbedding(cacheKey)
-  if (cached) return cached
-
+async function embedTextOnce(text: string): Promise<number[]> {
   await assertTokenBudget('voyage', estimateTextTokens(text)).catch(async (err) => {
     if (err instanceof TokenLimitExceededError) {
       await recordTokenFallback('voyage')
@@ -83,11 +79,30 @@ export async function embedText(text: string): Promise<number[]> {
     operation: 'embedText',
   })
   const embedding = response.data?.[0]?.embedding
-  if (!embedding) {
-    throw new Error('Voyage embedText returned no embedding data')
-  }
-  await setCachedEmbedding(cacheKey, embedding)
+  if (!embedding) throw new Error('Voyage embedText returned no embedding data')
   return embedding
+}
+
+export async function embedText(text: string): Promise<number[]> {
+  const cacheKey = getCacheKey(text)
+  const cached = await getCachedEmbedding(cacheKey)
+  if (cached) return cached
+
+  // Retry up to 3 times on 429 with exponential backoff (1s, 3s, 9s)
+  let lastErr: unknown
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const embedding = await embedTextOnce(text)
+      await setCachedEmbedding(cacheKey, embedding)
+      return embedding
+    } catch (err: any) {
+      lastErr = err
+      const is429 = err?.statusCode === 429 || err?.message?.includes('429')
+      if (!is429 || attempt === 2) throw err
+      await new Promise(r => setTimeout(r, 1000 * Math.pow(3, attempt)))
+    }
+  }
+  throw lastErr
 }
 
 /**

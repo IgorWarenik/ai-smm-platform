@@ -206,7 +206,7 @@ export const KnowledgeSearchSchema = z.object({
   limit: z.coerce.number().int().min(1).max(20).default(5),
   maxCharsPerChunk: z.coerce.number().int().min(100).max(5000).default(1200),
   maxTotalChars: z.coerce.number().int().min(500).max(20000).default(4000),
-  minSimilarity: z.coerce.number().min(0).max(1).default(0.72),
+  minSimilarity: z.coerce.number().min(0).max(1).default(0.15),
 })
 
 // ─── Pagination ───────────────────────────────────────────────────────────────

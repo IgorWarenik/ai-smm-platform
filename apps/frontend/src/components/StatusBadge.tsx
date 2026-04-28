@@ -1,7 +1,7 @@
 import { cn } from '@/lib/utils'
 
 const STATUS_MAP: Record<string, { bg: string; fg: string; label: string }> = {
-  PENDING:               { bg: '#F9FAFB', fg: '#6B7280', label: 'Черновик' },
+  PENDING:               { bg: '#F9FAFB', fg: '#6B7280', label: 'Ожидает запуска' },
   REJECTED:             { bg: '#F9FAFB', fg: '#6B7280', label: 'Отклонено' },
   QUEUED:               { bg: '#F9FAFB', fg: '#6B7280', label: 'В очереди' },
   AWAITING_CLARIFICATION: { bg: '#FEF3C7', fg: '#92400E', label: 'Ждёт уточнений' },

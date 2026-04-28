@@ -37,7 +37,7 @@ vi.mock('@ai-marketing/ai-engine', () => ({
   embedText: vi.fn().mockResolvedValue(new Array(1024).fill(0.1)),
   applyRagBudget: vi.fn().mockImplementation((results: any[]) => results),
   buildRagPack: vi.fn().mockReturnValue({ shortlist: [], promptPack: '' }),
-  resolveRagBudget: vi.fn().mockReturnValue({ maxCharsPerChunk: 1200, maxTotalChars: 4000, minSimilarity: 0.72 }),
+  resolveRagBudget: vi.fn().mockReturnValue({ maxCharsPerChunk: 1200, maxTotalChars: 4000, minSimilarity: 0.15 }),
 }))
 
 vi.mock('bcryptjs', () => ({
@@ -177,10 +177,11 @@ describe('GET /api/projects/:projectId/knowledge', () => {
     const token = await getToken(app)
 
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.knowledgeItem.findMany.mockResolvedValue([
-      { id: 'item-1', category: 'TEMPLATE', content: 'Email template 1' },
-      { id: 'item-2', category: 'SEO', content: 'SEO guidelines' },
+    db.$queryRawUnsafe.mockResolvedValue([
+      { id: 'item-1', category: 'TEMPLATE', content: 'Email template 1', metadata: {}, createdAt: new Date(), hasEmbedding: false },
+      { id: 'item-2', category: 'SEO', content: 'SEO guidelines', metadata: {}, createdAt: new Date(), hasEmbedding: false },
     ])
+    db.knowledgeItem.count.mockResolvedValue(2)
 
     const res = await app.inject({
       method: 'GET',
@@ -246,7 +247,8 @@ describe('GET /api/projects/:projectId/knowledge/search', () => {
     const token = await getToken(app)
 
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
-    db.$queryRawUnsafe.mockResolvedValue([])
+    // Route checks COUNT(*) first — return 0 so it short-circuits before embedText
+    db.$queryRawUnsafe.mockResolvedValue([{ count: BigInt(0) }])
 
     const res = await app.inject({
       method: 'GET',

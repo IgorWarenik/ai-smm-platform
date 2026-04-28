@@ -7,49 +7,64 @@ import { workflow, node, links } from '@n8n-as-code/transformer';
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
 // Property name                    Node type (short)         Flags
-// WebhookTrigger                   webhook
-// RunMarketer                      code
-// SendMarketerCallback             httpRequest
-// RunContentMaker                  code
-// SendFinalCallback                httpRequest
+// WebhookTrigger                     webhook
+// RunMarketer                        code
+// SendMarketerCallback               httpRequest
+// RunContentMaker                    code
+// SendFinalCallback                  httpRequest
 //
 // ROUTING MAP
 // ──────────────────────────────────────────────────────────────────
-// WebhookTrigger → RunMarketer → SendMarketerCallback → RunContentMaker → SendFinalCallback
+// WebhookTrigger
+//    → RunMarketer
+//      → SendMarketerCallback
+//        → RunContentMaker
+//          → SendFinalCallback
 // </workflow-map>
 
+// =====================================================================
+// METADATA DU WORKFLOW
+// =====================================================================
+
 @workflow({
-  id: '',
-  name: 'Scenario B — Sequential Orchestration',
-  active: false,
-  settings: { executionOrder: 'v1' }
+    id: 'RNkNPCxKI11enQLM',
+    name: 'Scenario B — Sequential Orchestration',
+    active: false,
+    isArchived: false,
+    settings: { executionOrder: 'v1' },
 })
-export class ScenarioBWorkflow {
+export class ScenarioBSequentialOrchestrationWorkflow {
+    // =====================================================================
+    // CONFIGURATION DES NOEUDS
+    // =====================================================================
 
-  @node({
-    name: 'Webhook Trigger',
-    type: 'n8n-nodes-base.webhook',
-    version: 2.1,
-    position: [0, 0]
-  })
-  WebhookTrigger = {
-    responseBinaryPropertyName: 'data',
-    httpMethod: 'POST',
-    path: 'scenario-b',
-    responseMode: 'onReceived',
-    responseCode: 202,
-  };
+    @node({
+        id: 'f78f77b3-cc34-4c2e-8dd8-d17d6be48f5c',
+        webhookId: '0cdb494f-359a-43a3-bb73-c3429fd35fb1',
+        name: 'Webhook Trigger',
+        type: 'n8n-nodes-base.webhook',
+        version: 2.1,
+        position: [0, 0],
+    })
+    WebhookTrigger = {
+        responseBinaryPropertyName: 'data',
+        httpMethod: 'POST',
+        path: 'scenario-b',
+        responseMode: 'onReceived',
+        responseCode: 202,
+    };
 
-  @node({
-    name: 'Run Marketer',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [220, 0]
-  })
-  RunMarketer = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: 'f62ead42-0378-4be1-99da-6de1636dc401',
+        name: 'Run Marketer',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [220, 0],
+    })
+    RunMarketer = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const payload = $input.first().json.body;
 const { executionId, taskId, projectId, input, callbackUrl, projectProfile } = payload;
 const scenario = payload.scenario || 'B';
@@ -57,7 +72,7 @@ const API_BASE_URL = $env.API_BASE_URL;
 const MAX_TOKENS_MARKETER_BRIEF = Number($env.MAX_TOKENS_MARKETER_BRIEF || 2400);
 const RAG_MAX_CHARS_PER_CHUNK = Number($env.RAG_MAX_CHARS_PER_CHUNK || 1200);
 const RAG_MAX_TOTAL_CHARS = Number($env.RAG_MAX_TOTAL_CHARS || 4000);
-const RAG_MIN_SIMILARITY = Number($env.RAG_MIN_SIMILARITY || 0.72);
+const RAG_MIN_SIMILARITY = Number($env.RAG_MIN_SIMILARITY || 0.15);
 const estimateTokens = (text) => Math.max(1, Math.ceil((text || '').length / 4));
 const normalizeForCache = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
 const hashString = (text) => {
@@ -181,46 +196,54 @@ const briefDigest = JSON.stringify({
 // Pass compact RAG pack and brief digest through to content maker (avoids duplicate RAG fetch)
 return [{ json: { executionId, taskId, projectId, input, callbackUrl, projectProfile, marketerOutput, briefDigest, ragShortlist, ragPromptPack, scenario } }];
 `,
-  };
+    };
 
-  @node({
-    name: 'Send Marketer Callback',
-    type: 'n8n-nodes-base.httpRequest',
-    version: 4.4,
-    position: [440, 0]
-  })
-  SendMarketerCallback = {
-    url: '={{ $json.callbackUrl }}',
-    method: 'POST',
-    sendHeaders: true,
-    headerParameters: {
-      parameters: [
-        { name: 'Content-Type', value: 'application/json' },
-        { name: 'Authorization', value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}' },
-      ]
-    },
-    sendBody: true,
-    contentType: 'json',
-    specifyBody: 'json',
-    jsonBody: {
-      executionId: '={{ $json.executionId }}',
-      agentType: 'MARKETER',
-      output: '={{ $json.marketerOutput }}',
-      iteration: 1,
-      status: 'completed',
-    },
-  };
+    @node({
+        id: '80e93796-0446-48bb-8ee6-7c7e2082851b',
+        name: 'Send Marketer Callback',
+        type: 'n8n-nodes-base.httpRequest',
+        version: 4.4,
+        position: [440, 0],
+    })
+    SendMarketerCallback = {
+        url: '={{ $json.callbackUrl }}',
+        method: 'POST',
+        sendHeaders: true,
+        headerParameters: {
+            parameters: [
+                {
+                    name: 'Content-Type',
+                    value: 'application/json',
+                },
+                {
+                    name: 'Authorization',
+                    value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}',
+                },
+            ],
+        },
+        sendBody: true,
+        contentType: 'json',
+        specifyBody: 'json',
+        jsonBody: {
+            executionId: '={{ $json.executionId }}',
+            agentType: 'MARKETER',
+            output: '={{ $json.marketerOutput }}',
+            iteration: 1,
+            status: 'completed',
+        },
+    };
 
-  @node({
-    name: 'Run Content Maker',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [660, 0]
-  })
-  RunContentMaker = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: '0139b641-fd10-4f7f-abdb-7f2abbca32c6',
+        name: 'Run Content Maker',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [660, 0],
+    })
+    RunContentMaker = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const item = $input.first().json;
 const { executionId, taskId, projectId, input, callbackUrl, projectProfile, marketerOutput, briefDigest, ragPromptPack, scenario } = item;
 const API_BASE_URL = $env.API_BASE_URL;
@@ -296,41 +319,52 @@ const contentOutput = result.data?.output || '';
 
 return [{ json: { executionId, taskId, projectId, callbackUrl, contentOutput } }];
 `,
-  };
+    };
 
-  @node({
-    name: 'Send Final Callback',
-    type: 'n8n-nodes-base.httpRequest',
-    version: 4.4,
-    position: [880, 0]
-  })
-  SendFinalCallback = {
-    url: '={{ $json.callbackUrl.replace("/callback", "/execution-complete") }}',
-    method: 'POST',
-    sendHeaders: true,
-    headerParameters: {
-      parameters: [
-        { name: 'Content-Type', value: 'application/json' },
-        { name: 'Authorization', value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}' },
-      ]
-    },
-    sendBody: true,
-    contentType: 'json',
-    specifyBody: 'json',
-    jsonBody: {
-      executionId: '={{ $json.executionId }}',
-      agentType: 'CONTENT_MAKER',
-      output: '={{ $json.contentOutput }}',
-      iteration: 1,
-      status: 'completed',
-    },
-  };
+    @node({
+        id: '4092f70d-ef8d-40c0-8698-602a883f7d8e',
+        name: 'Send Final Callback',
+        type: 'n8n-nodes-base.httpRequest',
+        version: 4.4,
+        position: [880, 0],
+    })
+    SendFinalCallback = {
+        url: '={{ $json.callbackUrl.replace("/callback", "/execution-complete") }}',
+        method: 'POST',
+        sendHeaders: true,
+        headerParameters: {
+            parameters: [
+                {
+                    name: 'Content-Type',
+                    value: 'application/json',
+                },
+                {
+                    name: 'Authorization',
+                    value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}',
+                },
+            ],
+        },
+        sendBody: true,
+        contentType: 'json',
+        specifyBody: 'json',
+        jsonBody: {
+            executionId: '={{ $json.executionId }}',
+            agentType: 'CONTENT_MAKER',
+            output: '={{ $json.contentOutput }}',
+            iteration: 1,
+            status: 'completed',
+        },
+    };
 
-  @links()
-  defineRouting() {
-    this.WebhookTrigger.out(0).to(this.RunMarketer.in(0));
-    this.RunMarketer.out(0).to(this.SendMarketerCallback.in(0));
-    this.SendMarketerCallback.out(0).to(this.RunContentMaker.in(0));
-    this.RunContentMaker.out(0).to(this.SendFinalCallback.in(0));
-  }
+    // =====================================================================
+    // ROUTAGE ET CONNEXIONS
+    // =====================================================================
+
+    @links()
+    defineRouting() {
+        this.WebhookTrigger.out(0).to(this.RunMarketer.in(0));
+        this.RunMarketer.out(0).to(this.SendMarketerCallback.in(0));
+        this.SendMarketerCallback.out(0).to(this.RunContentMaker.in(0));
+        this.RunContentMaker.out(0).to(this.SendFinalCallback.in(0));
+    }
 }

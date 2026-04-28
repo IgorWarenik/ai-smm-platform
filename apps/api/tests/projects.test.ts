@@ -22,6 +22,7 @@ vi.mock('@ai-marketing/db', () => ({
       create: vi.fn(),
       upsert: vi.fn(),
       delete: vi.fn(),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       count: vi.fn().mockResolvedValue(1),
     },
     project: {
@@ -30,8 +31,25 @@ vi.mock('@ai-marketing/db', () => ({
       findUnique: vi.fn(),
       update: vi.fn(),
       delete: vi.fn().mockResolvedValue({}),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
       count: vi.fn().mockResolvedValue(0),
     },
+    task: {
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    execution: {
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    agentOutput: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    approval: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    agentFeedback: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    conversation: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    file: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    knowledgeItem: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    projectProfile: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    billing: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     $transaction: vi.fn(),
   },
   withProjectContext: vi.fn(),
@@ -329,6 +347,9 @@ describe('DELETE /api/projects/:projectId', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks()
+    db.$transaction.mockImplementation((ops: any) =>
+      Array.isArray(ops) ? Promise.all(ops) : ops(db)
+    )
     app = await buildApp()
   })
 
@@ -347,6 +368,43 @@ describe('DELETE /api/projects/:projectId', () => {
     })
 
     expect(res.statusCode).toBe(204)
+  })
+
+  it('204 — owner delete cascades project-scoped rows', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'OWNER' })
+    db.task.findMany.mockResolvedValue([{ id: 'task-1' }, { id: 'task-2' }])
+    db.execution.findMany.mockResolvedValue([{ id: 'exec-1' }])
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(204)
+    expect(db.agentOutput.deleteMany).toHaveBeenCalledWith({
+      where: { executionId: { in: ['exec-1'] } },
+    })
+    expect(db.execution.deleteMany).toHaveBeenCalledWith({
+      where: { taskId: { in: ['task-1', 'task-2'] } },
+    })
+    expect(db.approval.deleteMany).toHaveBeenCalledWith({
+      where: { taskId: { in: ['task-1', 'task-2'] } },
+    })
+    expect(db.agentFeedback.deleteMany).toHaveBeenCalledWith({
+      where: { taskId: { in: ['task-1', 'task-2'] } },
+    })
+    expect(db.conversation.deleteMany).toHaveBeenCalledWith({
+      where: { taskId: { in: ['task-1', 'task-2'] } },
+    })
+    expect(db.file.deleteMany).toHaveBeenCalledWith({ where: { projectId: PROJECT_ID } })
+    expect(db.task.deleteMany).toHaveBeenCalledWith({ where: { projectId: PROJECT_ID } })
+    expect(db.knowledgeItem.deleteMany).toHaveBeenCalledWith({ where: { projectId: PROJECT_ID } })
+    expect(db.projectProfile.deleteMany).toHaveBeenCalledWith({ where: { projectId: PROJECT_ID } })
+    expect(db.billing.deleteMany).toHaveBeenCalledWith({ where: { projectId: PROJECT_ID } })
+    expect(db.projectMember.deleteMany).toHaveBeenCalledWith({ where: { projectId: PROJECT_ID } })
+    expect(db.project.delete).toHaveBeenCalledWith({ where: { id: PROJECT_ID } })
   })
 
   it('403 — MEMBER cannot delete project', async () => {

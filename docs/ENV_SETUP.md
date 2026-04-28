@@ -33,7 +33,7 @@ This project uses `.env` files for managing secrets and configuration.
    - MIN_REVISION_FEEDBACK_CHARS (minimum actionable evaluator feedback size before Scenario D starts another revision, default 40)
    - RAG_MAX_CHARS_PER_CHUNK (optional RAG budget per snippet, default 1200)
    - RAG_MAX_TOTAL_CHARS (optional total RAG context budget, default 4000)
-   - RAG_MIN_SIMILARITY (optional RAG relevance floor, default 0.72)
+   - RAG_MIN_SIMILARITY (optional RAG relevance floor, default 0.15)
    - CLAUDE_INPUT_COST_PER_MTOKENS and CLAUDE_OUTPUT_COST_PER_MTOKENS (USD per 1M tokens for cost estimates)
    - S3 or MinIO credentials
    - COHERE_API_KEY (for speech-to-text)
