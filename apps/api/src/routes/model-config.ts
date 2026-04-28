@@ -2,21 +2,17 @@ import { readFile, writeFile } from 'fs/promises'
 import path from 'path'
 import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
-import { Redis } from 'ioredis'
 import { prisma } from '@ai-marketing/db'
 import { MemberRole } from '@ai-marketing/shared'
 import { runAgent } from '@ai-marketing/ai-engine'
-
-const MODEL_LAST_ERROR_KEY = 'model:last_error'
+import { getRedis, MODEL_LAST_ERROR_KEY } from '../lib/redis-client'
+import { withTimeout } from '../lib/utils'
 
 async function readModelError(): Promise<{ provider: string; message: string; timestamp: string } | null> {
-  const redisUrl = process.env.REDIS_URL
-  if (!redisUrl) return null
   try {
-    const redis = new Redis(redisUrl, { lazyConnect: true, enableOfflineQueue: false })
-    await redis.connect()
+    const redis = getRedis()
+    if (!redis) return null
     const raw = await redis.get(MODEL_LAST_ERROR_KEY)
-    redis.disconnect()
     return raw ? JSON.parse(raw) : null
   } catch { return null }
 }
@@ -154,22 +150,6 @@ function applyTestModelConfigToProcess(content: string, body: z.infer<typeof Tes
   }
 
   return { provider, apiKey, apiUrl }
-}
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error) => {
-        clearTimeout(timer)
-        reject(error)
-      }
-    )
-  })
 }
 
 export async function modelConfigRoutes(app: FastifyInstance) {

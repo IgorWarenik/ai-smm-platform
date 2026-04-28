@@ -1,5 +1,5 @@
 'use client'
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api'
 import { useProject } from '@/contexts/project'
@@ -224,7 +224,7 @@ function TasksPageInner() {
 
   const selectedTask = tasks.find(t => t.id === selectedId)
 
-  const fetchTasks = () => {
+  const fetchTasks = useCallback(() => {
     if (!activeProject) return
     const qs = statusFilter !== 'ALL' ? `&status=${statusFilter}` : ''
     apiFetch<{ data: Task[] }>(`/api/projects/${activeProject.id}/tasks?pageSize=30${qs}`)
@@ -232,25 +232,33 @@ function TasksPageInner() {
         setTasks(prev => data.map(t => mergeTask(prev.find(p => p.id === t.id), t)))
       })
       .finally(() => setLoading(false))
-  }
+  }, [activeProject?.id, statusFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchTasks() }, [activeProject?.id, statusFilter])
+  useEffect(() => { fetchTasks() }, [fetchTasks])
 
+  // Stable ref so the interval callback always calls the latest fetchTasks
+  const fetchTasksRef = useRef(fetchTasks)
+  useEffect(() => { fetchTasksRef.current = fetchTasks }, [fetchTasks])
+
+  const hasActiveTask = tasks.some(t => ['QUEUED', 'PENDING', 'RUNNING'].includes(t.status))
   useEffect(() => {
-    if (!tasks.some(t => ['QUEUED', 'PENDING', 'RUNNING'].includes(t.status))) return
-    const id = setInterval(fetchTasks, 2000)
+    if (!hasActiveTask) return
+    const id = setInterval(() => fetchTasksRef.current(), 2000)
     return () => clearInterval(id)
-  }, [activeProject?.id, statusFilter, tasks])
+  }, [hasActiveTask])
 
   useEffect(() => {
     if (!selectedId || !activeProject) return
+    const controller = new AbortController()
     apiFetch<{ data: Task }>(`/api/projects/${activeProject.id}/tasks/${selectedId}`)
       .then(({ data }) => {
+        if (controller.signal.aborted) return
         setTasks(prev => prev.some(t => t.id === data.id)
           ? prev.map(t => t.id === data.id ? mergeTask(t, data) : t)
           : [data, ...prev])
       })
       .catch(() => { })
+    return () => controller.abort()
   }, [activeProject?.id, selectedId])
 
   const handleDelete = async (tid: string) => {
