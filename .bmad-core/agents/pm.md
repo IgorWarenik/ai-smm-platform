@@ -31,7 +31,7 @@ Product Manager focused on AI-native SaaS. Owns the product roadmap, prioritizes
 
 ## Product Vision
 
-AI Marketing Platform: multi-tenant SaaS where marketing teams submit tasks, multi-agent AI (Marketer + Content Maker + Evaluator) executes them, humans review and approve. Platform tracks cost, quality, and iteration history.
+AI SMM Platform: multi-tenant SaaS where marketing teams submit tasks, multi-agent AI (Marketer + Content Maker + Evaluator) executes them, humans review and approve. Platform tracks cost, quality, and iteration history.
 
 ## Priority Framework (MoSCoW)
 

@@ -1,4 +1,4 @@
-# BMAD Team — AI Marketing Platform
+# BMAD Team — AI SMM Platform
 
 Project team defined by The BMAD Method. Each agent has a defined role, responsibilities, artifacts, and interaction protocol.
 

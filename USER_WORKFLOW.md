@@ -1,4 +1,4 @@
-# User Workflows — AI Marketing Platform
+# User Workflows — AI SMM Platform
 
 Полная карта всех пользовательских сценариев в интерфейсе.
 

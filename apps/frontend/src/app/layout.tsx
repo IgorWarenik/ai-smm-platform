@@ -11,8 +11,8 @@ const DARK_BG  = 'hsl(240,10%,3.9%)'
 const LIGHT_BG = 'hsl(0,0%,100%)'
 
 export const metadata: Metadata = {
-  title: 'AI Marketing Platform',
-  description: 'AI-powered marketing automation',
+  title: 'AI SMM Platform',
+  description: 'AI-powered SMM automation',
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

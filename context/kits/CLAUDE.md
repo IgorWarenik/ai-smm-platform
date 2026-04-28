@@ -1,6 +1,6 @@
 # Kits
 
-Kits define what the AI Marketing Platform must do.
+Kits define what the AI SMM Platform must do.
 
 ## Conventions
 - Start with `cavekit-overview.md`.

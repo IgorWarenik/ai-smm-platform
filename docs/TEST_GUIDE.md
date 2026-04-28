@@ -1,4 +1,4 @@
-# Test Guide for AI Marketing Platform
+# Test Guide for AI SMM Platform
 
 Этот документ — компактный справочник по тестированию Fastify, n8n workflows и AI-логики.
 

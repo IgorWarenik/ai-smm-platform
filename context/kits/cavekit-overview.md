@@ -6,7 +6,7 @@ last_edited: "2026-04-20T00:00:00Z"
 # Cavekit Overview
 
 ## Project
-AI Marketing Platform — multi-tenant service for marketing automation and content production via AI agents. Users create projects, populate a structured brand profile and a project-scoped knowledge base, submit free-form content tasks, and receive agent-generated results produced by an external workflow engine running one of four scenario shapes. All LLM and embedding usage flows through a centralized budgeting and telemetry layer.
+AI SMM Platform — multi-tenant service for marketing automation and content production via AI agents. Users create projects, populate a structured brand profile and a project-scoped knowledge base, submit free-form content tasks, and receive agent-generated results produced by an external workflow engine running one of four scenario shapes. All LLM and embedding usage flows through a centralized budgeting and telemetry layer.
 
 ## Domain Index
 | Domain | Cavekit File | Requirements | Status | Description |

@@ -1,4 +1,4 @@
-# Work Plan — AI Marketing Platform
+# Work Plan — AI SMM Platform
 
 > Отмечай `[x]` когда шаг завершён. Читай этот файл в начале каждой сессии.
 

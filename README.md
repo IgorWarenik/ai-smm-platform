@@ -1,8 +1,21 @@
-# AI Marketing Platform
+# AI SMM Platform
 
-AI Marketing Platform is a local-first marketing automation workbench. It combines a Next.js frontend, a Fastify API, PostgreSQL with pgvector, Redis, n8n workflows, MinIO storage, and Prometheus metrics.
+AI SMM Platform is a local-first marketing automation workbench. It combines a Next.js frontend, a Fastify API, PostgreSQL with pgvector, Redis, n8n workflows, MinIO storage, and Prometheus metrics.
 
 The product lets a user create projects, configure a model provider, create marketing tasks, review generated output, request revisions, and manage project knowledge for RAG. The frontend includes task management, a Kanban board, Calendar, Library, and a Knowledge Base per project.
+
+### Agent Scenarios
+
+Each marketing task is scored and routed to one of four AI agent scenarios:
+
+| Scenario | Agents | Use case |
+| --- | --- | --- |
+| **A** | Single agent (Marketer or Content Maker) | Simple one-shot content or strategy requests |
+| **B** | Marketer → Content Maker (sequential) | Strategy-first: brief is drafted then handed off for final content |
+| **C** | Marketer + Content Maker (parallel) | Independent deliverables merged into one result |
+| **D** | Marketer → Content Maker → Evaluator (iterative) | Quality loop: up to 3 revision cycles until evaluation passes |
+
+Agents operate with the company's Knowledge Base as context — brand guides, case studies, tone-of-voice rules, SEO references, and platform specs stored per project. Before each agent call the platform retrieves the most semantically relevant knowledge fragments (pgvector RAG) and injects them into the prompt, so generated social media posts, captions, and campaigns reflect the actual company brand and audience.
 
 ## Current Stack
 

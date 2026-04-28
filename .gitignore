@@ -86,3 +86,19 @@ n8nac-config.json
 .cavekit/task-status.json
 .cavekit/tasks.json
 .cavekit/capabilities.json
+
+# Screenshots and browser snapshots
+*.png
+*.jpg
+*.jpeg
+*.gif
+.playwright-mcp/
+
+# Backup env files
+.env.bak
+*.env.bak
+
+# Inactive n8n workflow directories (not the active local_5678_igor_g)
+apps/workflows/local_5678_fa9037/
+apps/workflows/local_5678_b686dd/
+apps/workflows/local_5678_user_04b4a55a_*/
