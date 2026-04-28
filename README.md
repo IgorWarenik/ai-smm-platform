@@ -2,7 +2,7 @@
 
 AI Marketing Platform is a local-first marketing automation workbench. It combines a Next.js frontend, a Fastify API, PostgreSQL with pgvector, Redis, n8n workflows, MinIO storage, and Prometheus metrics.
 
-The product lets a user create projects, configure a model provider, create marketing tasks, review generated output, request revisions, and manage project knowledge for RAG.
+The product lets a user create projects, configure a model provider, create marketing tasks, review generated output, request revisions, and manage project knowledge for RAG. The frontend includes task management, a Kanban board, Calendar, Library, and a Knowledge Base per project.
 
 ## Current Stack
 
@@ -94,7 +94,7 @@ GEMINI_API_KEY=...
 GEMINI_API_URL=https://generativelanguage.googleapis.com/v1beta
 ```
 
-The Profile page contains Model API Settings. Saving there writes the selected provider, API key, and API URL into `.env` and also updates the running API process, so an API container restart is not required for model-provider changes.
+The Settings page (`/settings`) contains Model AI configuration. The Model tab lets you select a provider, enter an API key and URL, save the config, and run a live connection test. Saving writes the selected provider, API key, and API URL into `.env` and also updates the running API process — no API container restart required. If a model call fails at runtime, the error is stored in Redis (`model:last_error`) and shown in the Settings / Model AI section.
 
 Do not commit `.env` or real API keys.
 
@@ -192,7 +192,7 @@ curl "http://localhost:3001/api/projects/$PROJECT_ID/knowledge/search?q=brand%20
 n8n is used for workflow orchestration and callbacks into the API. The current n8n-as-code active workflow directory is declared in `n8nac-config.json`:
 
 ```text
-apps/workflows/local_5678_user_04b4a55a_19a1_4e19_9c54_3a201a6a7c0f/personal
+apps/workflows/local_5678_igor_g/personal
 ```
 
 Before editing or publishing workflows, confirm the active instance:
@@ -213,6 +213,8 @@ npm install --prefix apps/frontend
 npm install --prefix packages/db
 npm install --prefix packages/ai-engine
 ```
+
+Internal shared API utilities live in `apps/api/src/lib/`: `utils.ts` (shared `withTimeout`), `redis-client.ts` (Redis singleton), `sse.ts` (SSE helpers).
 
 Type-check:
 
@@ -281,7 +283,7 @@ Prometheus scrapes the API metrics endpoint. Open `http://localhost:9090` or cal
 
 ## Troubleshooting
 
-If task creation fails with a provider or billing message, check the selected provider in Profile, the matching key in `.env`, and `docker compose logs -f api`.
+If task creation fails with a provider or billing message, check the selected provider in Settings → Model AI, the matching key in `.env`, and `docker compose logs -f api`. The last model error is also shown in the Settings UI if Redis is running.
 
 If n8n webhook execution fails, confirm n8n is healthy and workflows are active/published:
 

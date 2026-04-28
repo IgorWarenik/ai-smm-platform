@@ -41,20 +41,17 @@ Use concise bullets. Do not leave hidden context only in chat.
 - After push, run `push --verify` or `verify <workflowId>`.
 - For webhook/chat/form workflows, activate then test with `--prod` unless intentionally using manually armed test mode.
 
-## Current n8n Path Risk
-`n8nac-config.json` says active workflow dir is:
+## Active n8n Workflow Path
 
-```text
-apps/workflows/local_5678_fa9037/personal
-```
+`n8nac-config.json` active instance is `local_5678_igor_g` (verified 2026-04-28).
 
-Existing workflow source files currently live in:
+Active workflow directory:
 
 ```text
 apps/workflows/local_5678_igor_g/personal
 ```
 
-This can make an agent edit stale or inactive workflow files. Resolve by trusting `npx --yes n8nac list` output before workflow edits.
+Always confirm before editing: `npx --yes n8nac list`. Stale directories `local_5678_fa9037` and `local_5678_user_04b4a55a_*` are inactive and should not be edited.
 
 ## State Files
 - `WORKPLAN.md`: live state, active task, next step.

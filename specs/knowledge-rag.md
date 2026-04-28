@@ -1,7 +1,7 @@
 title: Knowledge base and RAG
 status: approved
 priority: high
-last_updated: 2026-04-11
+last_updated: 2026-04-28
 
 ## Scope
 - `apps/api/src/routes/knowledge.ts`
@@ -16,8 +16,12 @@ Store project knowledge, embed it with Voyage AI, and retrieve compact relevant 
 
 ## Public Contract
 - Knowledge routes live under `/api/projects/:projectId/knowledge`.
-- Create knowledge item accepts `category`, `content`, and optional `metadata`.
-- Search uses `GET /api/projects/:projectId/knowledge/search?q=...&category=...&limit=...` and returns raw `data` plus compact `shortlist` and `promptPack`.
+- Create knowledge item: `POST /knowledge` accepts `category`, `content` (max 10000 chars), and optional `metadata`.
+- List: `GET /knowledge` returns paginated items with `hasEmbedding` flag.
+- Search: `GET /knowledge/search?q=...&category=...&limit=...` returns raw `data` plus compact `shortlist` and `promptPack`.
+- PATCH: `PATCH /knowledge/:itemId` updates `content`, `category`, or `metadata`; re-embeds async if content changed.
+- DELETE: `DELETE /knowledge/:itemId` removes item.
+- Upload: `POST /knowledge/upload` accepts `multipart/form-data` with a file (PDF, DOCX, DOC, MD, TXT; max 20 MB). Text is extracted, chunked at 4000 chars with 200-char overlap, stored as separate knowledge items, embedded async.
 - Search returns project-scoped items ordered by vector similarity.
 - Search applies RAG budget before returning prompt context: `maxCharsPerChunk`, `maxTotalChars`, and `minSimilarity`.
 - `promptPack` is built by a shared helper in `packages/ai-engine`, not duplicated in workflows.
@@ -27,7 +31,7 @@ Store project knowledge, embed it with Voyage AI, and retrieve compact relevant 
 
 ## Acceptance Criteria
 - Knowledge item creation stores content even if async embedding fails.
-- Embedding failures are logged as warnings and do not lose the original knowledge item.
+- Embedding failures are logged as warnings (`app.log.warn`) and do not lose the original knowledge item.
 - Search never returns data from another project.
 - Search limit is capped by Zod validation.
 - Voyage calls go through `packages/ai-engine/src/embeddings.ts` so token monitoring, Redis counters, and token limits apply.
@@ -35,6 +39,8 @@ Store project knowledge, embed it with Voyage AI, and retrieve compact relevant 
 - RAG snippets below `minSimilarity` are excluded, each snippet is trimmed to `maxCharsPerChunk`, and the final context never exceeds `maxTotalChars`.
 - Two-stage RAG is used for agent prompts: retrieval shortlist first, then a lightweight prompt pack with 2-3 compact theses.
 - Scenario B/D do not issue duplicate `knowledge/search` requests for the same `executionId` and `input`.
+- File upload supports PDF, DOCX, DOC, MD, TXT; unsupported types return 400.
+- Chunked upload items include `title` and `sourceFile` in metadata.
 
 ## Examples
 ```json

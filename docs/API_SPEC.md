@@ -1,7 +1,7 @@
 # API Specification
 
 > Source of truth: actual implementation in `apps/api/src/routes/`.
-> Last synced: 2026-04-19
+> Last synced: 2026-04-28
 
 **Base URL:** `http://localhost:3001/api`
 
@@ -150,6 +150,14 @@ Requires auth. Returns projects where user is a member.
 
 ---
 
+### DELETE /projects/:projectId/members/:userId
+
+Removes a member from the project. Only project owner can remove members.
+
+**Response 204:** No content.
+
+---
+
 ## Project Profile
 
 ### GET /projects/:projectId/profile
@@ -183,39 +191,30 @@ Optional Tier 2/3 fields: `products`, `audience`, `usp`, `competitors`, `tov`, `
 
 ### POST /projects/:projectId/tasks
 
+Requires project profile to be set first. Scoring runs asynchronously — the task is always stored and returned immediately as `QUEUED`.
+
 **Request:**
 ```json
 { "input": "Create an Instagram campaign for product launch (10-5000 chars)" }
 ```
 
-**Response 201** — task accepted:
+**Response 201** — task queued, scoring in background:
 ```json
 {
-  "data": { "id": "uuid", "status": "PENDING", "score": 72, "scenario": "D", ... },
-  "scoring": {
-    "score": 72,
-    "scenario": "D",
-    "reasoning": "Detailed task with clear objective...",
-    "isValid": true
-  }
+  "data": { "id": "uuid", "status": "QUEUED", "input": "...", "createdAt": "ISO8601" }
 }
 ```
 
-**Response 202** — clarification needed (score 25-39):
-```json
-{
-  "data": { "id": "uuid", "status": "AWAITING_CLARIFICATION", ... },
-  "message": "Task requires clarification before it can be processed",
-  "clarificationQuestions": ["What is the target audience?", "What platforms?"]
-}
-```
+After background scoring the status transitions to:
+- `REJECTED` — score < 25
+- `AWAITING_CLARIFICATION` — score 25-39 (task gets a `clarificationNote` with questions)
+- `PENDING` — score ≥ 40 (execution starts automatically)
 
-**Response 422** — score < 25:
+**Response 422** — project profile not set:
 ```json
 {
-  "error": "Task rejected",
-  "code": "TASK_SCORE_TOO_LOW",
-  "details": { "score": "12", "threshold": "25", "reasoning": "Too vague..." }
+  "error": "Project profile is required before executing tasks",
+  "code": "PROFILE_MISSING"
 }
 ```
 
@@ -257,7 +256,7 @@ Starts AI agent execution. Requires project profile to be set.
 
 ### GET /projects/:projectId/tasks
 
-**Query params:** `page` (default 1), `pageSize` (default 20, max 100).
+**Query params:** `page` (default 1), `pageSize` (default 20, max 100), `status` (optional filter).
 
 **Response 200:**
 ```json
@@ -269,6 +268,25 @@ Starts AI agent execution. Requires project profile to be set.
 ### GET /projects/:projectId/tasks/:taskId
 
 **Response 200:** Task with `executions` and `agentOutputs`.
+
+---
+
+### PATCH /projects/:projectId/tasks/:taskId
+
+Updates task input. Only allowed when task is `PENDING` or `REJECTED`.
+
+**Request:**
+```json
+{ "input": "Updated task description" }
+```
+
+**Response 200:** Updated task object.
+
+---
+
+### DELETE /projects/:projectId/tasks/:taskId
+
+**Response 204:** No content.
 
 ---
 
@@ -293,7 +311,7 @@ data: {"type":"completed","taskId":"uuid"}
 ```json
 {
   "category": "FRAMEWORK",
-  "content": "Content text (min 1, max 50000 chars)",
+  "content": "Content text (min 1, max 10000 chars)",
   "metadata": { "title": "Brand Guide 2024", "tags": ["brand", "voice"] }
 }
 ```
@@ -301,6 +319,55 @@ data: {"type":"completed","taskId":"uuid"}
 `category` ∈ `FRAMEWORK | CASE | TEMPLATE | SEO | PLATFORM_SPEC | BRAND_GUIDE`.
 
 **Response 201:** KnowledgeItem object. Embedding generated async.
+
+---
+
+### GET /projects/:projectId/knowledge
+
+Lists all knowledge items for a project with pagination.
+
+**Query params:** `page` (default 1), `pageSize` (default 20).
+
+**Response 200:**
+```json
+{
+  "data": [{ "id": "uuid", "category": "BRAND_GUIDE", "content": "...", "hasEmbedding": true, "createdAt": "ISO8601" }],
+  "total": 12, "page": 1, "pageSize": 20
+}
+```
+
+---
+
+### PATCH /projects/:projectId/knowledge/:itemId
+
+**Request (at least one field required):**
+```json
+{ "content": "Updated text", "category": "CASE", "metadata": {} }
+```
+
+**Response 200:** Updated KnowledgeItem. Re-embedding triggered async if `content` changed.
+
+---
+
+### DELETE /projects/:projectId/knowledge/:itemId
+
+**Response 204:** No content.
+
+---
+
+### POST /projects/:projectId/knowledge/upload
+
+Upload a file (PDF, DOCX, DOC, MD, TXT — max 20 MB). Text is extracted, chunked (4000 chars, 200-char overlap), stored as multiple knowledge items, and embedded async.
+
+**Request:** `multipart/form-data` with fields:
+- `file` — the file
+- `category` — KnowledgeCategory (default `BRAND_GUIDE`)
+- `description` — optional, max 1000 chars
+
+**Response 201:**
+```json
+{ "data": [...], "chunks": 3 }
+```
 
 ---
 
@@ -353,6 +420,66 @@ data: {"type":"completed","taskId":"uuid"}
 `score` — 1-5 integer.
 
 **Response 201:** AgentFeedback object.
+
+---
+
+## Model Configuration
+
+### GET /projects/:projectId/model-config
+
+Returns current model provider settings. Only project members can read.
+
+**Response 200:**
+```json
+{
+  "data": {
+    "provider": "CLAUDE",
+    "apiUrl": "https://api.anthropic.com",
+    "hasApiKey": true,
+    "providerKeys": { "CLAUDE": true, "CHATGPT": false, "GEMINI": false, "DEEPSEEK": false },
+    "envFilePath": "/repo/.env",
+    "lastError": { "provider": "CHATGPT", "message": "429 quota exceeded", "timestamp": "ISO8601" }
+  }
+}
+```
+
+`lastError` is `null` when no recent model failure is recorded.
+
+---
+
+### PUT /projects/:projectId/model-config
+
+Updates model provider, API key, and API URL. Only project owner can update.
+
+**Request:**
+```json
+{ "provider": "CLAUDE", "apiKey": "sk-...", "apiUrl": "https://api.anthropic.com" }
+```
+
+`provider` ∈ `CLAUDE | CHATGPT | DEEPSEEK | GEMINI`.
+`apiKey` is optional if the key is already stored for that provider.
+
+**Response 200:** Updated config (same shape as GET, no key returned).
+
+---
+
+### POST /projects/:projectId/model-config/test
+
+Sends a live test prompt to the configured model and returns the result.
+
+**Request (optional — defaults to currently saved config):**
+```json
+{ "provider": "CLAUDE", "apiKey": "sk-...", "apiUrl": "https://api.anthropic.com" }
+```
+
+**Response 200:**
+```json
+{
+  "data": { "ok": true, "provider": "CLAUDE", "message": "OK", "latencyMs": 412 }
+}
+```
+
+`ok: false` on provider error — `message` contains the error text.
 
 ---
 
@@ -432,7 +559,7 @@ Fastify-sensible errors (`notFound`, `unauthorized`, `badRequest`, etc.) use:
 ```typescript
 {
   id, projectId, input, score, scenario,
-  status: PENDING | AWAITING_CLARIFICATION | REJECTED | RUNNING | COMPLETED | FAILED,
+  status: QUEUED | PENDING | AWAITING_CLARIFICATION | REJECTED | RUNNING | AWAITING_APPROVAL | COMPLETED | FAILED,
   clarificationNote, rejectedAt, createdAt, updatedAt
 }
 ```

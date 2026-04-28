@@ -14,6 +14,7 @@
 ## API And Tasks
 - Spec: `specs/task-lifecycle.md`
 - Implementation: `apps/api/src/routes/tasks.ts`, `apps/api/src/routes/callback.ts`
+- Shared lib: `apps/api/src/lib/utils.ts` (withTimeout), `apps/api/src/lib/redis-client.ts` (model error), `apps/api/src/lib/sse.ts` (SSE manager)
 - Contracts: `packages/shared/src/schemas.ts`, `packages/shared/src/types.ts`
 - Exclude unless directly changing DB internals: Prisma generated output and unrelated route files.
 
@@ -39,9 +40,10 @@
 - Contracts: `.env.example`, `docs/ENV_SETUP.md`, Prometheus `/metrics`
 - Exclude: workflow internals unless provider call routing changes.
 
-## Auth, Projects, Profile
+## Auth, Projects, Profile, Model Config
 - Spec: `specs/auth-projects-profile.md`
-- Implementation: `apps/api/src/routes/auth.ts`, `apps/api/src/routes/projects.ts`, `apps/api/src/routes/profile.ts`
+- Implementation: `apps/api/src/routes/auth.ts`, `apps/api/src/routes/projects.ts`, `apps/api/src/routes/profile.ts`, `apps/api/src/routes/model-config.ts`
+- Shared lib: `apps/api/src/lib/redis-client.ts` (model error key)
 - Contracts: `packages/shared/src/schemas.ts`, `packages/shared/src/types.ts`
 - Exclude: AI engine and workflow files unless project profile payload changes.
 

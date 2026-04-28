@@ -81,7 +81,7 @@ graph TB
 - **Zod** for request validation
 - **JWT** authentication with access + refresh tokens
 - **SSE** (Server-Sent Events) for real-time agent progress streaming
-- Routes: `/api/auth`, `/api/projects`, `/api/projects/:id/profile`, `/api/projects/:id/tasks`, `/api/projects/:id/tasks/:id/approvals`, `/api/projects/:id/tasks/:id/feedback`, `/api/projects/:id/knowledge`, `/api/internal/callback`
+- Routes: `/api/auth`, `/api/projects`, `/api/projects/:id/profile`, `/api/projects/:id/tasks`, `/api/projects/:id/tasks/:id/approvals`, `/api/projects/:id/tasks/:id/feedback`, `/api/projects/:id/knowledge`, `/api/projects/:id/model-config`, `/api/internal/agent-completion`, `/api/internal/callback`, `/api/internal/execution-complete`
 
 ### AI Orchestration Layer (`apps/workflows`)
 - **n8n** as workflow engine — scenarios are version-controlled TypeScript files (`apps/workflows/`)
@@ -93,10 +93,10 @@ graph TB
 - Agent tools (RAG search, knowledge base) are called via HTTP from n8n Code nodes
 
 ### AI Services
-- **claude-sonnet-4-6** for reasoning, strategy, content generation, and evaluation
+- **Selected model provider** (Claude, DeepSeek, ChatGPT/OpenAI, or Gemini) for reasoning, strategy, content generation, and evaluation — configured via `MODEL_PROVIDER` env var and the Settings / Model AI page in the UI
 - **Voyage AI** for semantic embeddings (1024 dimensions) stored in pgvector
 - **Redis embedding cache** for repeated Voyage AI vectors and token savings
-- Fallback: agent errors are caught in n8n and reported back via callback
+- Fallback: agent errors are caught in n8n and reported back via callback; Scenario A also has a local fallback draft when the selected provider is unavailable
 
 ### Data Layer
 - **PostgreSQL 16** with **pgvector** for vector similarity search (RAG)
@@ -106,11 +106,14 @@ graph TB
 
 ### Task Lifecycle (§11.1–§11.5 ТЗ)
 ```
-PENDING → [score < 25] → REJECTED
-PENDING → [25-39]      → AWAITING_CLARIFICATION → (client answers) → re-score
-PENDING → [≥ 40]       → QUEUED → RUNNING → AWAITING_APPROVAL → COMPLETED
-                                                               → REVISION_REQUESTED (up to 3×) → QUEUED
-                                                               → REJECTED
+POST /tasks (profile required) → QUEUED → background scoring:
+  score < 25   → REJECTED
+  score 25-39  → AWAITING_CLARIFICATION → (client answers) → re-score
+  score ≥ 40   → PENDING → auto-execute → RUNNING
+
+RUNNING → AWAITING_APPROVAL → COMPLETED
+                            → REVISION_REQUESTED (up to 3×) → QUEUED → RUNNING
+                            → REJECTED
 ```
 
 ## Data Flow
@@ -124,15 +127,19 @@ sequenceDiagram
     participant VoyageAI
     participant PostgreSQL
 
-    User->>Fastify: POST /tasks (input)
+    User->>Fastify: POST /tasks (input; profile required)
+    Fastify->>PostgreSQL: Store task (status=QUEUED)
+    Fastify-->>User: 201 { status: "QUEUED" }
+    Note over Fastify,Claude: Background scoring (async)
     Fastify->>Claude: Score task (§11.1)
     Claude-->>Fastify: score, scenario, clarification?
-    Fastify->>PostgreSQL: Store task (status=PENDING|REJECTED|AWAITING_CLARIFICATION)
-    User->>Fastify: POST /tasks/:id/execute
+    Fastify->>PostgreSQL: Update task (PENDING|REJECTED|AWAITING_CLARIFICATION)
+    Note over Fastify,n8n: Auto-execute when PENDING
     Fastify->>PostgreSQL: Load project profile (§12.1)
     Fastify->>n8n: POST /webhook/orchestrator (payload + profile)
-    n8n->>PostgreSQL: RAG search (via Fastify knowledge API)
-    n8n->>Claude: Run agent with profile context
+    n8n->>Fastify: GET /knowledge/search (RAG via API, not direct DB)
+    Fastify-->>n8n: shortlist + promptPack
+    n8n->>Claude: Run agent with profile + RAG context
     Claude-->>n8n: Agent output
     n8n->>Fastify: POST /internal/callback
     Fastify->>PostgreSQL: Store agent output

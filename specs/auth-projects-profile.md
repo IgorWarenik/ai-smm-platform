@@ -1,12 +1,13 @@
 title: Auth, projects, and project profile
 status: approved
 priority: high
-last_updated: 2026-04-10
+last_updated: 2026-04-28
 
 ## Scope
 - `apps/api/src/routes/auth.ts`
 - `apps/api/src/routes/projects.ts`
 - `apps/api/src/routes/profile.ts`
+- `apps/api/src/routes/model-config.ts`
 - `packages/shared/src/schemas.ts`
 - `packages/shared/src/types.ts`
 - `packages/db/prisma/schema.prisma`
@@ -26,9 +27,13 @@ Give every user a secure account, one or more isolated projects, and a compact p
 - A user can register with `email`, `password`, and optional `name`.
 - A user can log in and receive an access token.
 - Authenticated users can create and list only their own projects.
+- Project members can be added by email and role; only owners can remove members.
 - Project profile has the required Tier 1 fields: `companyName`, `description`, `niche`, `geography`.
 - Project profile may include products, audience, competitors, TOV, keywords, forbidden topics, references, social links, KPI, and existing content.
 - Unauthorized or non-member access returns an auth/permission error and never leaks project data.
+- Model AI config (provider, API key, API URL) is readable by members and writable only by owners.
+- Saving model config writes to `.env` and updates the running process — no API restart required.
+- Last model error (stored in Redis `model:last_error`) is returned on GET model-config as `lastError`.
 
 ## Examples
 ```json
