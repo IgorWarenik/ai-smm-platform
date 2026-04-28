@@ -17,11 +17,11 @@ export default function ApprovalPanel({ projectId, taskId, agentOutputs, onDecis
 
     const submit = async (decision: 'APPROVED' | 'REVISION_REQUESTED') => {
         if (!hasOutput) {
-            setError('Output is not loaded yet')
+            setError('Результат ещё загружается')
             return
         }
         if (decision === 'REVISION_REQUESTED' && comment.trim().length < 50) {
-            setError('Revision feedback must be at least 50 characters')
+            setError('Опишите правки подробнее — минимум 50 символов')
             return
         }
         setLoading(true)
@@ -33,7 +33,7 @@ export default function ApprovalPanel({ projectId, taskId, agentOutputs, onDecis
             )
             onDecision(result)
         } catch (err: any) {
-            setError(err.message ?? 'Failed')
+            setError(err.message ?? 'Ошибка отправки решения')
         } finally {
             setLoading(false)
         }
@@ -41,7 +41,7 @@ export default function ApprovalPanel({ projectId, taskId, agentOutputs, onDecis
 
     return (
         <div className="space-y-4 rounded-lg border border-border bg-card p-5">
-            <h3 className="text-sm font-medium text-foreground">Review Output</h3>
+            <h3 className="text-sm font-medium text-foreground">Результат агентов</h3>
 
             {hasOutput ? (
                 <div className="space-y-3">
@@ -54,22 +54,22 @@ export default function ApprovalPanel({ projectId, taskId, agentOutputs, onDecis
                 </div>
             ) : (
                 <div className="rounded-lg border border-border bg-background p-4 text-sm text-muted-foreground">
-                    Output is loading...
+                    Результат загружается...
                 </div>
             )}
 
             <div>
                 <label className="text-xs font-medium text-muted-foreground">
-                    Feedback (required for Revision Request, min 50 chars)
+                    Комментарий (обязателен при запросе правок, мин. 50 символов)
                 </label>
                 <textarea
                     value={comment}
                     onChange={e => { setComment(e.target.value); setError('') }}
                     rows={3}
                     className="mt-1.5 min-h-[110px] w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground outline-none focus:ring-2 focus:ring-ring/30"
-                    placeholder="Describe what needs to be changed..."
+                    placeholder="Опишите что нужно изменить..."
                 />
-                <p className="mt-1 text-xs text-muted-foreground">{comment.trim().length}/50 min</p>
+                <p className="mt-1 text-xs text-muted-foreground">{comment.trim().length}/50</p>
             </div>
 
             {error && <p className="text-sm text-destructive">{error}</p>}
@@ -77,11 +77,11 @@ export default function ApprovalPanel({ projectId, taskId, agentOutputs, onDecis
             <div className="flex flex-wrap gap-3">
                 <button onClick={() => submit('APPROVED')} disabled={loading || !hasOutput}
                     className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                    Approve
+                    {loading ? 'Отправка...' : 'Принять'}
                 </button>
                 <button onClick={() => submit('REVISION_REQUESTED')} disabled={loading || !hasOutput}
                     className="rounded-md border border-border px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50">
-                    Request Revision
+                    Запросить правки
                 </button>
             </div>
         </div>

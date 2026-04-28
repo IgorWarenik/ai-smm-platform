@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto'
+import { Redis } from 'ioredis'
 import { prisma, withProjectContext } from '@ai-marketing/db'
 import {
   ClarificationResponseSchema,
@@ -22,6 +23,23 @@ import { sseManager } from '../lib/sse'
 import { scoreTask } from '../services/scoring'
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const AGENT_CALL_TIMEOUT_MS = Number(process.env.AGENT_CALL_TIMEOUT_MS || 20000)
+
+const MODEL_LAST_ERROR_KEY = 'model:last_error'
+const MODEL_LAST_ERROR_TTL = 86400 // 24h
+
+async function writeModelError(err: unknown): Promise<void> {
+  const redisUrl = process.env.REDIS_URL
+  if (!redisUrl) return
+  try {
+    const provider = process.env.MODEL_PROVIDER ?? 'CLAUDE'
+    const message = err instanceof Error ? err.message : String(err)
+    const redis = new Redis(redisUrl, { lazyConnect: true, enableOfflineQueue: false })
+    await redis.connect()
+    await redis.set(MODEL_LAST_ERROR_KEY, JSON.stringify({ provider, message, timestamp: new Date().toISOString() }), 'EX', MODEL_LAST_ERROR_TTL)
+    redis.disconnect()
+  } catch { /* non-critical */ }
+}
 const DIRECT_SCENARIO_A_CONTENT_KEYWORDS = [
   'напиши',
   'пост',
@@ -40,6 +58,22 @@ function assertUuid(reply: FastifyReply, value: string, label: string): boolean 
     return false
   }
   return true
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
 }
 
 function buildProfileContext(profile: {
@@ -142,25 +176,29 @@ async function runScenarioADirect(
       : `You are a Senior Marketing Strategist. Analyze and develop effective marketing recommendations. Use Russian language unless specified. Be specific and actionable.\n\n${profileContext}`
 
   try {
-    const output = await runAgent({
-      systemPrompt,
-      userMessage: input,
-      maxTokens,
-      operation: `scenario-a.${agentType.toLowerCase()}.direct`,
-      semanticCacheKey: `scenario-a.direct:${taskId}`,
-      cacheSystemPrompt: true,
-      telemetry: {
-        taskId,
-        projectId,
-        scenario: ScenarioType.A,
-      },
-      onUsage: async ({ totalTokens }) => {
-        await prisma.billing.updateMany({
-          where: { projectId },
-          data: { tokensUsed: { increment: BigInt(totalTokens) } },
-        })
-      },
-    })
+    const output = await withTimeout(
+      runAgent({
+        systemPrompt,
+        userMessage: input,
+        maxTokens,
+        operation: `scenario-a.${agentType.toLowerCase()}.direct`,
+        semanticCacheKey: `scenario-a.direct:${taskId}`,
+        cacheSystemPrompt: true,
+        telemetry: {
+          taskId,
+          projectId,
+          scenario: ScenarioType.A,
+        },
+        onUsage: async ({ totalTokens }) => {
+          await prisma.billing.updateMany({
+            where: { projectId },
+            data: { tokensUsed: { increment: BigInt(totalTokens) } },
+          })
+        },
+      }),
+      AGENT_CALL_TIMEOUT_MS,
+      `Scenario A ${agentType} call`
+    )
 
     await withProjectContext(projectId, userId, async (tx) => {
       await tx.agentOutput.create({
@@ -199,6 +237,7 @@ async function runScenarioADirect(
     })
   } catch (err) {
     app.log.warn({ err, executionId }, 'Direct Scenario A provider call failed, using local fallback output')
+    void writeModelError(err)
     const output = buildScenarioAFallbackOutput(input, agentType, profile)
     await withProjectContext(projectId, userId, async (tx) => {
       await tx.agentOutput.create({
@@ -512,6 +551,16 @@ export async function taskRoutes(app: FastifyInstance) {
     })
     if (!membership) return reply.notFound('Project not found')
 
+    const profile = await prisma.projectProfile.findUnique({
+      where: { projectId },
+    })
+    if (!profile) {
+      return reply.code(422).send({
+        error: 'Project profile is required before executing tasks',
+        code: 'PROFILE_MISSING',
+      })
+    }
+
     const task = await withProjectContext(projectId, userId, async (tx) => {
       return tx.task.create({
         data: {
@@ -709,7 +758,27 @@ export async function taskRoutes(app: FastifyInstance) {
     const task = await prisma.task.findUnique({ where: { id: taskId } })
     if (!task || task.projectId !== projectId) return reply.notFound('Task not found')
 
-    await prisma.task.delete({ where: { id: taskId } })
+    await prisma.$transaction(async (tx) => {
+      const executions = await tx.execution.findMany({
+        where: { taskId },
+        select: { id: true },
+      })
+      const executionIds = executions.map((execution) => execution.id)
+
+      if (executionIds.length > 0) {
+        await tx.agentOutput.deleteMany({
+          where: { executionId: { in: executionIds } },
+        })
+      }
+
+      await tx.execution.deleteMany({ where: { taskId } })
+      await tx.approval.deleteMany({ where: { taskId } })
+      await tx.agentFeedback.deleteMany({ where: { taskId } })
+      await tx.conversation.deleteMany({ where: { taskId } })
+      await tx.file.deleteMany({ where: { taskId } })
+      await tx.task.delete({ where: { id: taskId } })
+    })
+
     return reply.code(204).send()
   })
 

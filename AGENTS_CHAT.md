@@ -9,6 +9,31 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 18 → Codex
+
+**Branch**
+- `agent/wave-18`
+
+**Files changed**
+- `apps/api/src/routes/model-config.ts`
+- `apps/frontend/src/app/settings/page.tsx`
+- `AGENTS_CHAT.md`
+
+**What was done**
+- Added `POST /api/projects/:projectId/model-config/test`.
+- Added model test timeout wrapper and one-word `OK` provider smoke call.
+- Added `Тест модели` button next to `Сохранить` in Settings → Модель AI.
+- Added success/error result blocks with provider, response message, and latency.
+
+**Validation**
+- `npx tsc --noEmit -p apps/api/tsconfig.json 2>&1 | head -10` — pass, no output.
+- `npx tsc --noEmit -p apps/frontend/tsconfig.json 2>&1 | head -10` — pass, no output.
+- `npm --prefix apps/frontend run build 2>&1 | tail -5` — pass.
+- Pre-commit full checks — pass, `10 files / 127 tests`.
+
+**Open questions / TODO**
+- Browser manual provider-key smoke was not run in the isolated worktree; code/build validation passed.
+
 ## Wave 17-FE → Codex
 
 **Branch**
@@ -32,6 +57,50 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 **Open questions / TODO**
 - None.
+
+**Notes**
+- Local `node_modules` had stale/mismatched packages (`@fastify/multipart@10`, `pdf-parse@2`) that blocked the required full test run. Repaired only local `node_modules`; no tracked API files were changed for this.
+- Existing unrelated dirty worktree files were left unstaged and untouched.
+
+## Wave 16-FE → Codex
+
+**Branch**
+- Working tree branch during implementation: `fix/project-create-failed-fetch`
+- `agent/wave-16-fe` branch and commit were not created safely because the shared worktree was already dirty with unrelated live changes. I preserved that state instead of rebasing/reverting/stashing someone else's work.
+
+**Completed tasks**
+- Task 0: finished `ApprovalPanel` flat restyle in `apps/frontend/src/components/ApprovalPanel.tsx`
+  - aligned panel/title/textarea/button classes with current flat theme
+  - kept approval logic unchanged
+- Task 1: added List / Kanban toggle in `apps/frontend/src/app/tasks/page.tsx`
+  - Kanban columns: `Входящие`, `В работе`, `На согласовании`, `Готово`, `Отклонено`
+  - task cards stay clickable and still open the right-side detail panel
+- Task 2: implemented `/calendar` in `apps/frontend/src/app/calendar/page.tsx`
+  - fetches completed tasks
+  - groups by completion date (`updatedAt`, fallback `createdAt`)
+  - month navigation via native `Date`
+  - day sidebar with task list and links back to `/tasks?selected=<id>`
+- Task 3: implemented `/library` in `apps/frontend/src/app/library/page.tsx`
+  - fetches completed tasks, then loads task detail for outputs
+  - renders artifact cards with agent, preview, copy-to-clipboard, and deep-link to task
+
+**Files changed**
+- `apps/frontend/src/components/ApprovalPanel.tsx`
+- `apps/frontend/src/app/tasks/page.tsx`
+- `apps/frontend/src/app/calendar/page.tsx`
+- `apps/frontend/src/app/library/page.tsx`
+- `WORKPLAN.md`
+- `AGENTS_CHAT.md`
+
+**Validation**
+- `npx tsc --noEmit -p apps/frontend/tsconfig.json` — pass
+- `npx vitest run --config vitest.config.ts` — pass, `10 files / 128 tests`
+- `npm --prefix apps/frontend run build` — pass
+- `git diff --check -- ...wave16 files...` — pass
+
+**Open questions / TODO**
+- Claude should do visual review in browser for spacing and density on `Kanban`, `Calendar`, and `Library`.
+- No safe branch split/commit was made in this session because of unrelated dirty state in the shared repo.
 
 ## Wave 14 → Codex — DONE
 
@@ -242,6 +311,144 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
   - Added selected-task detail fetch from `GET /api/projects/:projectId/tasks/:taskId`.
   - Added merge logic so fetched detail replaces the shallow list row without losing selection.
   - Added SSE completion/failure refresh so output is fetched after a running task completes.
+
+## Bug Fix → Codex — 2026-04-26
+
+**Branch:** `fix/project-create-failed-fetch`
+
+**Problem found**
+- User-created tasks could appear as `Черновик` and never reach model execution.
+- Frontend mapped `PENDING` to `Черновик`, which hid the real state.
+- `POST /api/projects/:projectId/tasks` allowed send-without-profile, then background start failed later.
+- `scoreTask()` and direct Scenario A agent calls had no timeout, so a slow/silent provider left tasks stuck in `QUEUED`.
+
+**What was done**
+- Added fail-fast profile check in `apps/api/src/routes/tasks.ts`; create-task now returns `422 PROFILE_MISSING` before creating a task when the project profile is absent.
+- Added timeout wrappers for task scoring and direct Scenario A agent calls, with existing fallbacks preserved.
+- Updated `apps/frontend/src/app/new/page.tsx` to show a clear profile-required error.
+- Renamed frontend `PENDING` badge from `Черновик` to `Ожидает запуска`.
+- Added API test coverage for the missing-profile create-task path.
+
+**Validation**
+- `npx vitest run --config vitest.config.ts apps/api/tests/tasks.test.ts` — pass, 21/21.
+- `npx tsc -p apps/api/tsconfig.json --noEmit` — pass.
+- `npm --prefix apps/frontend run type-check` — pass.
+- `docker compose build api frontend && docker compose up -d api frontend` — pass.
+- Live smoke:
+  - create task without profile → `422 {"code":"PROFILE_MISSING"}`
+  - create profile, then create task → `QUEUED` → `AWAITING_APPROVAL`
+  - resulting execution stored as `COMPLETED` with `agentOutputs: 1`
+
+**Notes**
+- Existing tasks that were already stuck in `QUEUED` before this fix will not auto-resume; recreate them after profile is filled.
+
+## Bug Fix → Codex — 2026-04-26 (Projects Menu)
+
+**Branch:** `fix/project-create-failed-fetch`
+
+**Problem found**
+- Projects still existed in API, but the layout menu no longer showed them.
+- `Sidebar` rendered only static navigation items and never fetched `/api/projects`.
+
+**What was done**
+- Added a `ПРОЕКТЫ` section to `apps/frontend/src/components/layout/Sidebar.tsx`.
+- Sidebar now fetches `/api/projects`, renders up to 6 projects, highlights the active one, and allows switching project directly from the menu.
+- If the stored active project no longer exists, Sidebar clears stale local state.
+
+**Validation**
+- `npm --prefix apps/frontend run type-check` — pass.
+- `docker compose build frontend && docker compose up -d frontend` — pass.
+- Browser smoke after login confirmed sidebar text contains:
+  - `ПРОЕКТЫ`
+  - `Smoke dispatch timeout 2026-04-26`
+  - `Smoke task dispatch 2026-04-26`
+  - `Печеньки`
+
+## Bug Fix → Codex — 2026-04-26 (Profile Arrays)
+
+**Branch:** `fix/project-create-failed-fetch`
+
+**Problem found**
+- In `/project`, `Продукты / Услуги` and `Целевая аудитория` looked editable but did not save.
+- Root cause was frontend-only: it sent plain strings in `PATCH /api/projects/:projectId/profile`.
+- API correctly rejected them with `400 VALIDATION_ERROR` because `products` must be `[{name, description, price?}]` and `audience` must be `[{segment, portrait, pain_points[]}]`.
+- The page swallowed the API error, so the failure looked like “input disappears / not saved”.
+
+**What was done**
+- Added normalization in `apps/frontend/src/app/project/page.tsx`:
+  - API `products[]` -> multiline text for display/edit
+  - API `audience[]` -> multiline text for display/edit
+- Added parsing in the save path:
+  - `products` lines parse as `Название: описание | цена`
+  - `audience` lines parse as `Сегмент: портрет | pain1, pain2`
+- Added visible error state instead of silent failure.
+- Added `whitespace-pre-wrap` in field display so multiline values remain readable after reload.
+
+**Validation**
+- `npm --prefix apps/frontend run type-check` — pass.
+- `docker compose build frontend && docker compose up -d frontend` — pass.
+- Browser smoke on `/project` with an existing profile:
+  - save `Продукты / Услуги`
+  - save `Целевая аудитория`
+  - reload page
+  - values remain visible
+- API readback on project `353bda0b-5d26-435a-b33c-f5e0e3d1d5d8` confirmed structured arrays were stored for both fields.
+
+## Bug Fix → Codex — 2026-04-26 (Profile Tier 3 Objects)
+
+**Branch:** `fix/project-create-failed-fetch`
+
+**Problem found**
+- Expanding `Tier 3 — Расширенный профиль` crashed the page with:
+  `Objects are not valid as a React child`
+- Root cause: `socialLinks` and `kpi` came from API as objects, but the profile page tried to render them like plain strings.
+
+**What was done**
+- Extended normalization in `apps/frontend/src/app/project/page.tsx`:
+  - `socialLinks` object -> multiline text
+  - `kpi` object -> multiline text
+- Added parse/save support for:
+  - `competitors`
+  - `socialLinks`
+  - `kpi`
+- Hardened `FieldView` so unknown non-string values are stringified instead of crashing React.
+
+**Validation**
+- `npm --prefix apps/frontend run type-check` — pass.
+- `docker compose build frontend && docker compose up -d frontend` — pass.
+- Browser smoke:
+  - login
+  - open `/project`
+  - expand `Tier 3 — Расширенный профиль`
+  - `Соцсети (ссылки)` and `KPI / метрики` render
+  - no `Objects are not valid as a React child` error appears
+
+## Bug Fix → Codex — 2026-04-26 (Approval Contrast)
+
+**Branch:** `fix/project-create-failed-fetch`
+
+**Problem found**
+- On tasks in `AWAITING_APPROVAL`, the approval screen used white/light text and old glass cards, making content unreadable in the current light theme.
+- `ApprovalPanel.tsx` still used legacy classes like `glass-panel-soft`, `text-white`, `text-zinc-100`, `text-cyan-100`.
+
+**What was done**
+- Re-themed `apps/frontend/src/components/ApprovalPanel.tsx` to use current design tokens:
+  - outer panel -> `border-border bg-card`
+  - inner output cards -> `bg-background`
+  - textarea -> `border-input bg-background text-foreground`
+  - markdown renderer -> `text-foreground`, `text-muted-foreground`, `bg-muted`, `border-border`
+  - buttons -> current `primary` and bordered neutral styles
+- Kept approval logic unchanged; this was a pure presentation fix.
+
+**Validation**
+- `npm --prefix apps/frontend run type-check` — pass.
+- `docker compose build frontend && docker compose up -d frontend` — pass.
+- Browser smoke on task `5858679c-37a4-4ad5-b430-84385988f6b8`:
+  - `Review Output` visible
+  - panel background `rgb(255, 255, 255)`
+  - heading color `rgb(9, 9, 11)`
+  - textarea color `rgb(9, 9, 11)`
+  - output paragraph color `rgb(9, 9, 11)`
   - Added `AWAITING_APPROVAL` guard: if selected task is awaiting approval but has no outputs, fetch detail again.
   - Selecting a newly created task now preserves/loads its detail.
 - `apps/frontend/src/components/ApprovalPanel.tsx`
@@ -775,3 +982,86 @@ _See AGENT_BRIEF_CODEX.md and AGENT_BRIEF_GEMINI.md_
 - `docker compose build api && docker compose up -d api` — pass
 - CORS preflight `OPTIONS /api/projects` with `Origin: http://localhost:3000` — `204`, `access-control-allow-origin: http://localhost:3000`
 - Authenticated `POST /api/projects` with `Origin: http://localhost:3000` — `201 Created`
+
+## Bug Fix → Codex — 2026-04-28
+
+**Bug:** settings/model test showed missing keys or always tested `CLAUDE`.
+
+**Root cause:**
+- model keys are currently stored in `/repo/.env`, not in Postgres;
+- `docker-compose.yml` did not pass all model env vars into API runtime;
+- settings UI had one shared `hasKey`, not per-provider key state;
+- `Тест модели` posted no JSON body, then later tested saved `MODEL_PROVIDER` instead of selected dropdown provider.
+
+**Fix:**
+- `docker-compose.yml` now passes `MODEL_*`, `OPENAI_*`, `GEMINI_*`, `DEEPSEEK_*`;
+- `apps/api/src/routes/model-config.ts` now reads key state per provider and test endpoint accepts selected provider/apiUrl/apiKey;
+- `apps/frontend/src/app/settings/page.tsx` now tracks key state per provider and sends selected provider to test endpoint;
+- empty API key no longer overwrites an existing saved key.
+
+**Validation:**
+- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass
+- `npx tsc --noEmit -p apps/frontend/tsconfig.json` — pass
+- `docker compose build api frontend && docker compose up -d api frontend` — pass
+- live API test: `CHATGPT` returns `provider: CHATGPT`, `GEMINI` returns `provider: GEMINI` + `OK`, no longer always `CLAUDE`
+- user confirmed UI test works.
+
+## Bug Fix → Codex — 2026-04-28
+
+**Bug:** semantic search showed `Результаты поиска (0)` although files were uploaded and processed.
+
+**Root cause:**
+- default RAG `minSimilarity=0.72` was too high for current `voyage-3-lite` chunks; real top scores were around `0.33–0.46`;
+- API restart dropped `knowledge_items.embedding` because Prisma schema did not model the pgvector column while entrypoint ran `prisma db push --accept-data-loss`;
+- short one-word queries like `ассистент` scored below `0.3`, even when the exact word existed in content.
+
+**Fix:**
+- lowered default `minSimilarity` to `0.3`;
+- added `embedding Unsupported("vector")?` to Prisma schema so restarts no longer drop embeddings;
+- restored embeddings for existing knowledge chunks;
+- added text-search fallback when vector search returns no rows.
+
+**Files changed:**
+- `apps/api/src/routes/knowledge.ts`
+- `packages/db/prisma/schema.prisma`
+- `packages/shared/src/schemas.ts`
+- `packages/ai-engine/src/rag-budget.ts`
+- `docker-compose.yml`
+- `.env`
+- `.env.example`
+- `docs/API_SPEC.md`
+- `docs/ENV_SETUP.md`
+- `WORKPLAN.md`
+
+**Validation:**
+- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass
+- `docker compose build api && docker compose up -d api` — pass
+- embeddings stayed `14/14` after API restart
+- live search: `Session Mind`, `инвестиции фонд активы`, `фасилитатор стратегическая сессия` return results
+- live fallback search: `ассистент` returns 2 results.
+
+## Config Change → Codex — 2026-04-28
+
+**Task:** set RAG similarity threshold to `0.15` everywhere.
+
+**Files changed:**
+- `.env`
+- `.env.example`
+- `docker-compose.yml`
+- `packages/ai-engine/src/rag-budget.ts`
+- `packages/shared/src/schemas.ts`
+- `docs/API_SPEC.md`
+- `docs/ENV_SETUP.md`
+- `apps/api/tests/feedback.test.ts`
+- `apps/api/tests/knowledge.test.ts`
+- active n8n workflow files in `apps/workflows/local_5678_igor_g/personal/`
+- `WORKPLAN.md`
+
+**Validation:**
+- `npx --yes n8nac list` — active tracked workflow dir confirmed
+- `npx tsc --noEmit -p apps/api/tsconfig.json` — pass
+- `docker compose build api && docker compose up -d api` — pass
+- API runtime env shows `RAG_MIN_SIMILARITY=0.15`
+- embeddings remain `14/14`
+- live search: `ассистент` returns 4 results
+- live search: `и/и помощник` returns 4 results.

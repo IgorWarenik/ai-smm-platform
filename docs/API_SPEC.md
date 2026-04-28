@@ -312,7 +312,7 @@ data: {"type":"completed","taskId":"uuid"}
 - `limit` — 1-20, default 5
 - `maxCharsPerChunk` — 100-5000, default 1200
 - `maxTotalChars` — 500-20000, default 4000
-- `minSimilarity` — 0-1, default 0.72
+- `minSimilarity` — 0-1, default 0.15
 
 **Response 200:**
 ```json

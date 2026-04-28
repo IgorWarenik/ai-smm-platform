@@ -12,6 +12,7 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderOpen,
+  BookOpen,
 } from 'lucide-react'
 import TierProgress from './TierProgress'
 import { cn } from '@/lib/utils'
@@ -24,6 +25,7 @@ const NAV = [
   { icon: Calendar, label: 'Календарь', href: '/calendar' },
   { icon: Library, label: 'Библиотека', href: '/library' },
   { icon: Building2, label: 'Проект', href: '/project' },
+  { icon: BookOpen, label: 'База знаний', href: '/project/knowledge' },
   { icon: Settings, label: 'Настройки', href: '/settings' },
 ]
 
@@ -99,7 +101,7 @@ export default function Sidebar() {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
         {NAV.map(({ icon: Icon, label, href }) => {
-          const active = href === '/dashboard'
+          const active = href === '/dashboard' || href === '/project'
             ? pathname === href
             : pathname.startsWith(href)
           return (

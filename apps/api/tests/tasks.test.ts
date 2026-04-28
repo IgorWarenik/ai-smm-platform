@@ -27,7 +27,16 @@ vi.mock('@ai-marketing/db', () => ({
       count: vi.fn().mockResolvedValue(0),
     },
     projectProfile: { findUnique: vi.fn() },
-    execution: { create: vi.fn() },
+    execution: {
+      create: vi.fn(),
+      findMany: vi.fn().mockResolvedValue([]),
+      deleteMany: vi.fn().mockResolvedValue({ count: 0 }),
+    },
+    agentOutput: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    approval: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    agentFeedback: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    conversation: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
+    file: { deleteMany: vi.fn().mockResolvedValue({ count: 0 }) },
     $transaction: vi.fn(),
   },
   withProjectContext: vi.fn(),
@@ -100,6 +109,7 @@ describe('POST /api/projects/:projectId/tasks', () => {
     const token = await getToken(app)
 
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.projectProfile.findUnique.mockResolvedValue({ projectId: PROJECT_ID })
     db.task.create.mockResolvedValue({
       id: TASK_ID,
       projectId: PROJECT_ID,
@@ -125,6 +135,7 @@ describe('POST /api/projects/:projectId/tasks', () => {
     const token = await getToken(app)
 
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.projectProfile.findUnique.mockResolvedValue({ projectId: PROJECT_ID })
     db.task.create.mockResolvedValue({
       id: TASK_ID,
       projectId: PROJECT_ID,
@@ -151,6 +162,7 @@ describe('POST /api/projects/:projectId/tasks', () => {
     const token = await getToken(app)
 
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.projectProfile.findUnique.mockResolvedValue({ projectId: PROJECT_ID })
     db.task.create.mockResolvedValue({
       id: TASK_ID,
       projectId: PROJECT_ID,
@@ -184,6 +196,27 @@ describe('POST /api/projects/:projectId/tasks', () => {
     })
 
     expect(res.statusCode).toBe(404)
+  })
+
+  it('422 — create task requires project profile before sending to agents', async () => {
+    const token = await getToken(app)
+
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.projectProfile.findUnique.mockResolvedValue(null)
+
+    const res = await app.inject({
+      method: 'POST',
+      url: `/api/projects/${PROJECT_ID}/tasks`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { input: 'Create a comprehensive content strategy for Q1' },
+    })
+
+    expect(res.statusCode).toBe(422)
+    expect(res.json()).toMatchObject({
+      error: 'Project profile is required before executing tasks',
+      code: 'PROFILE_MISSING',
+    })
+    expect(db.task.create).not.toHaveBeenCalled()
   })
 
   it('401 — unauthenticated request rejected', async () => {
@@ -386,6 +419,7 @@ describe('DELETE /api/projects/:projectId/tasks/:taskId', () => {
     const token = await getToken(app)
     db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
     db.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID })
+    db.execution.findMany.mockResolvedValue([])
     db.task.delete.mockResolvedValue({})
 
     const res = await app.inject({
@@ -395,6 +429,31 @@ describe('DELETE /api/projects/:projectId/tasks/:taskId', () => {
     })
 
     expect(res.statusCode).toBe(204)
+  })
+
+  it('204 — deletes task with executions and dependent rows', async () => {
+    const token = await getToken(app)
+    db.projectMember.findUnique.mockResolvedValue({ role: 'MEMBER' })
+    db.task.findUnique.mockResolvedValue({ id: TASK_ID, projectId: PROJECT_ID })
+    db.execution.findMany.mockResolvedValue([{ id: 'exec-1' }, { id: 'exec-2' }])
+    db.task.delete.mockResolvedValue({})
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/projects/${PROJECT_ID}/tasks/${TASK_ID}`,
+      headers: { authorization: `Bearer ${token}` },
+    })
+
+    expect(res.statusCode).toBe(204)
+    expect(db.agentOutput.deleteMany).toHaveBeenCalledWith({
+      where: { executionId: { in: ['exec-1', 'exec-2'] } },
+    })
+    expect(db.execution.deleteMany).toHaveBeenCalledWith({ where: { taskId: TASK_ID } })
+    expect(db.approval.deleteMany).toHaveBeenCalledWith({ where: { taskId: TASK_ID } })
+    expect(db.agentFeedback.deleteMany).toHaveBeenCalledWith({ where: { taskId: TASK_ID } })
+    expect(db.conversation.deleteMany).toHaveBeenCalledWith({ where: { taskId: TASK_ID } })
+    expect(db.file.deleteMany).toHaveBeenCalledWith({ where: { taskId: TASK_ID } })
+    expect(db.task.delete).toHaveBeenCalledWith({ where: { id: TASK_ID } })
   })
 
   it('404 — non-member cannot delete', async () => {

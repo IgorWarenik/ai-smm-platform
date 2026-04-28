@@ -1,6 +1,24 @@
 import { getTokenBudget, makeSemanticCacheKey, runAgent } from '@ai-marketing/ai-engine'
 import { ScenarioType, TASK_SCORE_THRESHOLD, TaskScoringResult } from '@ai-marketing/shared'
 
+const TASK_SCORING_TIMEOUT_MS = Number(process.env.TASK_SCORING_TIMEOUT_MS || process.env.AGENT_CALL_TIMEOUT_MS || 15000)
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
+
 function isMarketingLike(input: string): boolean {
   const normalized = input.toLowerCase()
   return [
@@ -68,16 +86,17 @@ function fallbackScoring(input: string, reasoning: string): TaskScoringResult {
 export async function scoreTask(input: string): Promise<TaskScoringResult> {
   let text: string
   try {
-    text = await runAgent({
-      maxTokens: Math.max(getTokenBudget('scoring'), 1024),
-      operation: 'task.scoring',
-      semanticCacheKey: makeSemanticCacheKey('task.scoring.v2', [input]),
-      systemPrompt: [
-        'Return only compact valid JSON. No markdown. No prose.',
-        'Score marketing work requests for whether an agent can start useful work.',
-        'Treat a clear channel + deliverable + topic as valid even if brand details are missing.',
-      ].join(' '),
-      userMessage: `Task: ${JSON.stringify(input)}
+    text = await withTimeout(
+      runAgent({
+        maxTokens: Math.max(getTokenBudget('scoring'), 1024),
+        operation: 'task.scoring',
+        semanticCacheKey: makeSemanticCacheKey('task.scoring.v2', [input]),
+        systemPrompt: [
+          'Return only compact valid JSON. No markdown. No prose.',
+          'Score marketing work requests for whether an agent can start useful work.',
+          'Treat a clear channel + deliverable + topic as valid even if brand details are missing.',
+        ].join(' '),
+        userMessage: `Task: ${JSON.stringify(input)}
 
 Return exactly:
 {
@@ -98,9 +117,13 @@ Scenario:
 - B: strategy then content.
 - C: independent parallel subtasks.
 - D: iterative refinement.`,
-    })
-  } catch {
-    return fallbackScoring(input, 'AI scoring provider unavailable; accepted by local marketing-task fallback')
+      }),
+      TASK_SCORING_TIMEOUT_MS,
+      'Task scoring'
+    )
+  } catch (err) {
+    const details = err instanceof Error ? err.message : 'unknown scoring error'
+    return fallbackScoring(input, `AI scoring fallback: ${details}`)
   }
 
   const jsonMatch = text.match(/\{[\s\S]*\}/)

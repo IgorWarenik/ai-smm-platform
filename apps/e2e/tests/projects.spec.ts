@@ -44,7 +44,7 @@ test.describe('Projects', () => {
     await page.waitForURL(/\/projects\/[0-9a-f-]+$/)
 
     await expect(page.getByRole('heading', { name: 'New Task' })).toBeVisible()
-    await expect(page.getByPlaceholder('Describe your task...')).toBeVisible()
+    await expect(page.getByPlaceholder('Describe the campaign, channel, and result you need...')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Create Task' })).toBeVisible()
   })
 })

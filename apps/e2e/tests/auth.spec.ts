@@ -38,7 +38,7 @@ test.describe('Authentication', () => {
     await page.locator('input[type="email"]').fill('nobody@e2e.test')
     await page.locator('input[type="password"]').fill('wrongpassword')
     await page.getByRole('button', { name: 'Sign In' }).click()
-    await expect(page.locator('p.text-red-600')).toBeVisible()
+    await expect(page.getByText('Invalid credentials')).toBeVisible()
   })
 
   test('unauthenticated /dashboard → redirect to /login', async ({ page }) => {

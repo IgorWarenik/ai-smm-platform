@@ -1,59 +1,75 @@
 import { workflow, node, links } from '@n8n-as-code/transformer';
 
 // <workflow-map>
-// Workflow : Scenario D — Iterative Orchestration (Core product, §11.4 ТЗ)
+// Workflow : Scenario D — Iterative Orchestration
 // Nodes   : 7  |  Connections: 7
 //
 // NODE INDEX
 // ──────────────────────────────────────────────────────────────────
 // Property name                    Node type (short)         Flags
-// WebhookTrigger                   webhook
-// RunMarketer                      code
-// RunContentMaker                  code
-// RunEvaluator                     code
-// CheckIterations                  if
-// SendIterationCallback            httpRequest
-// SendFinalCallback                httpRequest
+// WebhookTrigger                     webhook
+// RunMarketer                        code
+// RunContentMaker                    code
+// RunEvaluator                       code
+// CheckIterations                    if
+// SendIterationCallback              code
+// SendFinalCallback                  httpRequest
 //
 // ROUTING MAP
 // ──────────────────────────────────────────────────────────────────
-// WebhookTrigger → RunMarketer → RunContentMaker → RunEvaluator → CheckIterations
-//   CheckIterations.out(0) [score < 80 && iter < 3 && meaningful feedback exists] → SendIterationCallback → RunContentMaker
-//   CheckIterations.out(1) [score >= 80 || iter >= 3 || no actionable feedback] → SendFinalCallback
+// WebhookTrigger
+//    → RunMarketer
+//      → RunContentMaker
+//        → RunEvaluator
+//          → CheckIterations
+//            → SendIterationCallback
+//              → RunContentMaker (↩ loop)
+//           .out(1) → SendFinalCallback
 // </workflow-map>
 
+// =====================================================================
+// METADATA DU WORKFLOW
+// =====================================================================
+
 @workflow({
-  id: '',
-  name: 'Scenario D — Iterative Orchestration',
-  active: false,
-  settings: { executionOrder: 'v1' }
+    id: '2mM036tpsqttXSSE',
+    name: 'Scenario D — Iterative Orchestration',
+    active: false,
+    isArchived: false,
+    settings: { executionOrder: 'v1' },
 })
-export class ScenarioDWorkflow {
+export class ScenarioDIterativeOrchestrationWorkflow {
+    // =====================================================================
+    // CONFIGURATION DES NOEUDS
+    // =====================================================================
 
-  @node({
-    name: 'Webhook Trigger',
-    type: 'n8n-nodes-base.webhook',
-    version: 2.1,
-    position: [0, 0]
-  })
-  WebhookTrigger = {
-    responseBinaryPropertyName: 'data',
-    httpMethod: 'POST',
-    path: 'scenario-d',
-    responseMode: 'onReceived',
-    responseCode: 202,
-  };
+    @node({
+        id: 'db41704b-e0ae-45f3-85ca-6357fa820fc1',
+        webhookId: 'f6790d65-118c-46fd-9e39-ce7fc2e8e95d',
+        name: 'Webhook Trigger',
+        type: 'n8n-nodes-base.webhook',
+        version: 2.1,
+        position: [0, 0],
+    })
+    WebhookTrigger = {
+        responseBinaryPropertyName: 'data',
+        httpMethod: 'POST',
+        path: 'scenario-d',
+        responseMode: 'onReceived',
+        responseCode: 202,
+    };
 
-  @node({
-    name: 'Run Marketer',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [220, 0]
-  })
-  RunMarketer = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: 'd872c8b4-82d3-4f39-ba73-ef9b379c905f',
+        name: 'Run Marketer',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [220, 0],
+    })
+    RunMarketer = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const payload = $input.first().json.body;
 const { executionId, taskId, projectId, input, callbackUrl, projectProfile } = payload;
 const scenario = payload.scenario || 'D';
@@ -61,7 +77,7 @@ const API_BASE_URL = $env.API_BASE_URL;
 const MAX_TOKENS_MARKETER_BRIEF = Number($env.MAX_TOKENS_MARKETER_BRIEF || 2400);
 const RAG_MAX_CHARS_PER_CHUNK = Number($env.RAG_MAX_CHARS_PER_CHUNK || 1200);
 const RAG_MAX_TOTAL_CHARS = Number($env.RAG_MAX_TOTAL_CHARS || 4000);
-const RAG_MIN_SIMILARITY = Number($env.RAG_MIN_SIMILARITY || 0.72);
+const RAG_MIN_SIMILARITY = Number($env.RAG_MIN_SIMILARITY || 0.15);
 const estimateTokens = (text) => Math.max(1, Math.ceil((text || '').length / 4));
 const normalizeForCache = (text) => (text || '').toLowerCase().replace(/\\s+/g, ' ').trim();
 const hashString = (text) => {
@@ -188,18 +204,19 @@ return [{ json: {
   iteration: 1,
 } }];
 `,
-  };
+    };
 
-  @node({
-    name: 'Run Content Maker',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [440, 0]
-  })
-  RunContentMaker = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: '7eab5f7c-85a8-45f3-b3a7-cf9db49f6733',
+        name: 'Run Content Maker',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [440, 0],
+    })
+    RunContentMaker = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const item = $input.first().json;
 const { executionId, taskId, projectId, input, callbackUrl, projectProfile, marketerOutput, briefDigest, briefRef, ragPromptPack, evalFeedback, iteration, scenario } = item;
 const API_BASE_URL = $env.API_BASE_URL;
@@ -280,18 +297,19 @@ const contentOutput = result.data?.output || '';
 
 return [{ json: { ...item, contentOutput } }];
 `,
-  };
+    };
 
-  @node({
-    name: 'Run Evaluator',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [660, 0]
-  })
-  RunEvaluator = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: '062bee9e-3510-4010-b414-9c13e3e917c6',
+        name: 'Run Evaluator',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [660, 0],
+    })
+    RunEvaluator = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const item = $input.first().json;
 const { executionId, taskId, projectId, input, callbackUrl, marketerOutput, briefDigest, contentOutput, projectProfile, iteration, scenario } = item;
 const API_BASE_URL = $env.API_BASE_URL;
@@ -426,49 +444,58 @@ return [{ json: {
   shouldIterate: !(evalResult.passed || false) && hasMeaningfulRevisionFeedback(evalResult.feedback || ''),
 } }];
 `,
-  };
+    };
 
-  // Decide: iterate or finalize (max 3 iterations per §11.4 ТЗ)
-  @node({
-    name: 'Check Iterations',
-    type: 'n8n-nodes-base.if',
-    version: 2.3,
-    position: [880, 0]
-  })
-  CheckIterations = {
-    conditions: {
-      options: { caseSensitive: true, leftValue: '', typeValidation: 'strict' },
-      conditions: [
-        {
-          // Continue only when evaluation failed and there is actionable feedback.
-          id: 'needs-revision',
-          leftValue: '={{ $json.shouldIterate }}',
-          rightValue: true,
-          operator: { type: 'boolean', operation: 'equals' }
+    @node({
+        id: '53720d78-8eec-4287-a5c0-881677eb6270',
+        name: 'Check Iterations',
+        type: 'n8n-nodes-base.if',
+        version: 2.3,
+        position: [880, 0],
+    })
+    CheckIterations = {
+        conditions: {
+            options: {
+                caseSensitive: true,
+                leftValue: '',
+                typeValidation: 'strict',
+            },
+            conditions: [
+                {
+                    id: 'needs-revision',
+                    leftValue: '={{ $json.shouldIterate }}',
+                    rightValue: true,
+                    operator: {
+                        type: 'boolean',
+                        operation: 'equals',
+                    },
+                },
+                {
+                    id: 'under-limit',
+                    leftValue: '={{ $json.iteration }}',
+                    rightValue: 3,
+                    operator: {
+                        type: 'number',
+                        operation: 'lt',
+                    },
+                },
+            ],
+            combinator: 'and',
         },
-        {
-          id: 'under-limit',
-          leftValue: '={{ $json.iteration }}',
-          rightValue: 3,
-          operator: { type: 'number', operation: 'lt' }
-        }
-      ],
-      combinator: 'and'
-    },
-    looseTypeValidation: false,
-  };
+        looseTypeValidation: false,
+    };
 
-  // Intermediate iteration: send eval output, bump iteration counter, loop back
-  @node({
-    name: 'Send Iteration Callback',
-    type: 'n8n-nodes-base.code',
-    version: 2,
-    position: [1100, -80]
-  })
-  SendIterationCallback = {
-    mode: 'runOnceForAllItems',
-    language: 'javaScript',
-    jsCode: `
+    @node({
+        id: '2dbd8b16-7c22-47cd-a17d-360efe3168c6',
+        name: 'Send Iteration Callback',
+        type: 'n8n-nodes-base.code',
+        version: 2,
+        position: [1100, -80],
+    })
+    SendIterationCallback = {
+        mode: 'runOnceForAllItems',
+        language: 'javaScript',
+        jsCode: `
 const item = $input.first().json;
 // Evaluator's feedback posted as EVALUATOR agent output in iteration callback
 try {
@@ -494,49 +521,57 @@ try {
 // Increment iteration and loop back to RunContentMaker
 return [{ json: { ...item, iteration: item.iteration + 1 } }];
 `,
-  };
+    };
 
-  @node({
-    name: 'Send Final Callback',
-    type: 'n8n-nodes-base.httpRequest',
-    version: 4.4,
-    position: [1100, 80]
-  })
-  SendFinalCallback = {
-    url: '={{ $json.callbackUrl.replace("/callback", "/execution-complete") }}',
-    method: 'POST',
-    sendHeaders: true,
-    headerParameters: {
-      parameters: [
-        { name: 'Content-Type', value: 'application/json' },
-        { name: 'Authorization', value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}' },
-      ]
-    },
-    sendBody: true,
-    contentType: 'json',
-    specifyBody: 'json',
-    jsonBody: {
-      executionId: '={{ $json.executionId }}',
-      agentType: 'CONTENT_MAKER',
-      output: '={{ $json.contentOutput }}',
-      evalScore: '={{ $json.evalScore }}',
-      iteration: '={{ $json.iteration }}',
-      status: 'completed',
-      // true when quality gate never passed — signals task.requiresReview = true
-      iterationsFailed: '={{ !$json.evalPassed && $json.iteration >= 3 }}',
-    },
-  };
+    @node({
+        id: 'bdc49b9b-81d2-40e3-b88b-d2c4f4ea7188',
+        name: 'Send Final Callback',
+        type: 'n8n-nodes-base.httpRequest',
+        version: 4.4,
+        position: [1100, 80],
+    })
+    SendFinalCallback = {
+        url: '={{ $json.callbackUrl.replace("/callback", "/execution-complete") }}',
+        method: 'POST',
+        sendHeaders: true,
+        headerParameters: {
+            parameters: [
+                {
+                    name: 'Content-Type',
+                    value: 'application/json',
+                },
+                {
+                    name: 'Authorization',
+                    value: '={{ "Bearer " + $env.INTERNAL_API_TOKEN }}',
+                },
+            ],
+        },
+        sendBody: true,
+        contentType: 'json',
+        specifyBody: 'json',
+        jsonBody: {
+            executionId: '={{ $json.executionId }}',
+            agentType: 'CONTENT_MAKER',
+            output: '={{ $json.contentOutput }}',
+            evalScore: '={{ $json.evalScore }}',
+            iteration: '={{ $json.iteration }}',
+            status: 'completed',
+            iterationsFailed: '={{ !$json.evalPassed && $json.iteration >= 3 }}',
+        },
+    };
 
-  @links()
-  defineRouting() {
-    this.WebhookTrigger.out(0).to(this.RunMarketer.in(0));
-    this.RunMarketer.out(0).to(this.RunContentMaker.in(0));
-    this.RunContentMaker.out(0).to(this.RunEvaluator.in(0));
-    this.RunEvaluator.out(0).to(this.CheckIterations.in(0));
-    // out(0) = needs revision: send intermediate result, then loop back
-    this.CheckIterations.out(0).to(this.SendIterationCallback.in(0));
-    this.SendIterationCallback.out(0).to(this.RunContentMaker.in(0));
-    // out(1) = passed or max iterations reached: finalize
-    this.CheckIterations.out(1).to(this.SendFinalCallback.in(0));
-  }
+    // =====================================================================
+    // ROUTAGE ET CONNEXIONS
+    // =====================================================================
+
+    @links()
+    defineRouting() {
+        this.WebhookTrigger.out(0).to(this.RunMarketer.in(0));
+        this.RunMarketer.out(0).to(this.RunContentMaker.in(0));
+        this.RunContentMaker.out(0).to(this.RunEvaluator.in(0));
+        this.RunEvaluator.out(0).to(this.CheckIterations.in(0));
+        this.CheckIterations.out(0).to(this.SendIterationCallback.in(0));
+        this.CheckIterations.out(1).to(this.SendFinalCallback.in(0));
+        this.SendIterationCallback.out(0).to(this.RunContentMaker.in(0));
+    }
 }

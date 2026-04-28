@@ -40,7 +40,7 @@ vi.mock('@ai-marketing/ai-engine', () => ({
   resolveRagBudget: vi.fn().mockReturnValue({
     maxCharsPerChunk: 1200,
     maxTotalChars: 4000,
-    minSimilarity: 0.72,
+    minSimilarity: 0.15,
   }),
 }))
 

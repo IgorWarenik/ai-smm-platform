@@ -87,3 +87,33 @@ export async function apiFetch<T = unknown>(
     if (res.status === 204) return undefined as T
     return res.json()
 }
+
+export async function apiUpload<T = unknown>(
+    path: string,
+    body: FormData,
+): Promise<T> {
+    loadTokensFromStorage()
+
+    const makeRequest = (token: string | null) =>
+        fetch(`${API_BASE}${path}`, {
+            method: 'POST',
+            body,
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+        })
+
+    let res = await makeRequest(accessToken)
+
+    if (res.status === 401 && refreshToken) {
+        const ok = await refreshAccessToken()
+        if (ok) res = await makeRequest(accessToken)
+    }
+
+    if (!res.ok) {
+        const error = await res.json().catch(() => ({ error: 'Upload failed' }))
+        const message = error.message ?? error.error ?? 'Upload failed'
+        throw Object.assign(new Error(message), { status: res.status })
+    }
+
+    if (res.status === 204) return undefined as T
+    return res.json()
+}

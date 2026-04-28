@@ -50,13 +50,19 @@ export default function TopBar() {
     const isDark = stored === 'dark' || (!stored && prefersDark)
     setDark(isDark)
     document.documentElement.classList.toggle('dark', isDark)
+    // Sync to cookie so server can render correct theme on next load
+    if (!document.cookie.includes('theme=')) {
+      document.cookie = `theme=${isDark ? 'dark' : 'light'}; path=/; max-age=31536000; SameSite=Lax`
+    }
   }, [])
 
   const toggleTheme = () => {
     const next = !dark
     setDark(next)
     document.documentElement.classList.toggle('dark', next)
-    localStorage.setItem('theme', next ? 'dark' : 'light')
+    const val = next ? 'dark' : 'light'
+    localStorage.setItem('theme', val)
+    document.cookie = `theme=${val}; path=/; max-age=31536000; SameSite=Lax`
   }
 
   const handleLogout = async () => {

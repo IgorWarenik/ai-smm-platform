@@ -1,175 +1,210 @@
 # Agent Brief — Codex
-## Wave 14 | Branch: `agent/bugfix-v1`
+## Wave 18 | Branch: `agent/wave-18`
 
-**Goal:** Autonomous production error collection and fixing.
-Collect errors from the running Docker stack, reproduce them, fix the root cause, validate.
+**Goal:** Кнопка «Тест модели» в разделе Настройки → Модель AI.
 
 **Rules:**
-- Branch from main: `git checkout -b agent/bugfix-v1`
-- Touch ONLY files relevant to each fix
-- Do NOT touch `apps/api/src/routes/auth.ts` or Prisma schema
-- Do NOT merge — Claude reviews
-- On finish: commit all, write report to `AGENTS_CHAT.md` under `## Wave 14 → Codex`
+- Ветка от `fix/project-create-failed-fetch`: `git checkout -b agent/wave-18`
+- Не трогать: `WORKPLAN.md`, `apps/workflows/`, n8n-файлы
+- Не мержить — Claude ревьюит
+- По окончании: коммит, отчёт в `AGENTS_CHAT.md` под `## Wave 18 → Codex`
 
 ---
 
-## Context — Running Stack
+## Контекст
 
-Docker Compose is running on non-standard ports:
+**Stack:** Fastify API (`:3001`), Next.js (`:3002` Docker), PostgreSQL, Redis.
+**Test user:** `igorwarenik@gmail.com` / `Admin1234!`
+**Дизайн-система:** flat design, shadcn CSS-переменные, Tailwind. Иконки — `lucide-react`.
 
-| Service | Container | Port |
-|---------|-----------|------|
-| Fastify API | `ai-marketing-api` | http://localhost:3001 |
-| Next.js Frontend | `ai-marketing-frontend` | http://localhost:3002 |
-| n8n | `ai-marketing-n8n` | http://localhost:5678 |
-| PostgreSQL | `ai-marketing-postgres` | localhost:5432 |
-| Redis | `ai-marketing-redis` | localhost:6380 |
+**Ключевые CSS-паттерны (из tasks/page.tsx):**
 
-Test user: `igorwarenik@gmail.com` / `Admin1234!`
+```tsx
+// Кнопка primary
+<button className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
+
+// Кнопка secondary
+<button className="rounded-md border border-border px-4 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors">
+
+// Success block
+<div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30 p-4">
+
+// Error block
+<div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+```
 
 ---
 
-## Step 1 — Collect Errors
+## Task — Кнопка «Тест модели» в Settings
 
-Run these commands to extract production errors:
+### Что нужно сделать
 
-```bash
-# API errors (4xx / 5xx)
-docker logs ai-marketing-api 2>&1 | grep -E '"statusCode":(4|5)[0-9]{2}' | tail -40
+#### 1. API endpoint — `POST /api/projects/:projectId/model-config/test`
 
-# API stderr
-docker logs ai-marketing-api 2>&1 | grep -iE 'error|fail|exception|prisma' | tail -40
+Файл: `apps/api/src/routes/model-config.ts`
 
-# Frontend build/runtime errors
-docker logs ai-marketing-frontend 2>&1 | grep -iE 'error|warn' | tail -20
+- Добавить в `modelConfigRoutes` новый маршрут:
 
-# n8n errors
-docker logs ai-marketing-n8n 2>&1 | grep -iE 'error|fail' | tail -20
-```
+```ts
+app.post('/test', async (request, reply) => {
+  const { projectId } = request.params as { projectId: string }
+  const userId = request.user.sub
 
-Catalog every unique error with: endpoint, status code, error message.
+  const membership = await prisma.projectMember.findUnique({
+    where: { userId_projectId: { userId, projectId } },
+  })
+  if (!membership) return reply.notFound('Project not found')
 
----
-
-## Step 2 — Known Bugs to Fix
-
-### Bug 1 — Profile PUT 400: ToneOfVoice enum mismatch (FIXED by Claude in Wave 14 pre-brief)
-
-**Root cause already fixed:** `apps/frontend/src/app/projects/[id]/profile/page.tsx`
-`TOV_OPTIONS` was `['FORMAL', 'FRIENDLY', 'EXPERT', 'CASUAL', 'INSPIRATIONAL']` — three values
-that don't exist in the `ToneOfVoice` enum (`OFFICIAL | FRIENDLY | EXPERT | PROVOCATIVE`).
-Claude already patched this. **Verify the fix is committed. If not, apply it:**
-
-```typescript
-// apps/frontend/src/app/projects/[id]/profile/page.tsx  line 6
-const TOV_OPTIONS = ['OFFICIAL', 'FRIENDLY', 'EXPERT', 'PROVOCATIVE']
-```
-
-**Verify fix works:**
-```bash
-curl -s -X PUT http://localhost:3001/api/projects/<any-project-id>/profile \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <token>" \
-  -d '{"companyName":"Test Co","description":"Test description min 10","niche":"Tech","tov":"OFFICIAL"}' \
-  | jq '.error // "OK"'
-# must return "OK" or profile data, not validation error
-```
-
-### Bug 2 — Profile PUT 400: `description` too short
-
-**Problem:** `CreateProjectProfileSchema` requires `description: z.string().min(10)`.
-Frontend HTML `required` attribute does not enforce minimum length.
-If user types fewer than 10 chars, API returns 400.
-
-**Fix:** Add client-side validation in the frontend form.
-
-File: `apps/frontend/src/app/projects/[id]/profile/page.tsx`
-
-In `handleSave`, before the `apiFetch` call, add validation:
-```typescript
-const handleSave = async (e: React.FormEvent) => {
-  e.preventDefault()
-  setSaving(true)
-  setError('')
-  setSuccess('')
-
-  // client-side validation
-  if (form.description.trim().length < 10) {
-    setError('Description must be at least 10 characters')
-    setSaving(false)
-    return
-  }
-
+  const start = Date.now()
   try {
-    // ... existing apiFetch code
+    const result = await withTimeout(
+      runAgent({
+        systemPrompt: 'You are a helpful assistant. Reply briefly.',
+        userMessage: 'Reply with exactly one word: OK',
+        maxTokens: 20,
+        operation: 'model.test',
+      }),
+      10000,
+      'model test'
+    )
+    return reply.send({
+      data: {
+        ok: true,
+        provider: process.env.MODEL_PROVIDER ?? 'CLAUDE',
+        message: result.trim(),
+        latencyMs: Date.now() - start,
+      },
+    })
+  } catch (err) {
+    return reply.send({
+      data: {
+        ok: false,
+        provider: process.env.MODEL_PROVIDER ?? 'CLAUDE',
+        message: err instanceof Error ? err.message : String(err),
+        latencyMs: Date.now() - start,
+      },
+    })
+  }
+})
 ```
 
-### Bug 3 — Any other 4xx/5xx errors found in Step 1
+- `runAgent` уже импортирован из `@ai-marketing/ai-engine` в соседних маршрутах, импортируй так же.
+- `withTimeout` — скопируй сигнатуру из `apps/api/src/routes/tasks.ts` (там уже есть эта функция).
 
-For each unique error you find in docker logs:
+#### 2. Frontend — `apps/frontend/src/app/settings/page.tsx`
 
-1. Identify the route and reproduce with curl
-2. Find root cause: schema mismatch, missing field, wrong enum, prisma error
-3. Fix in the relevant file (`apps/api/src/routes/*.ts` or `apps/frontend/src/**/*.tsx`)
-4. Verify with curl or unit test
+**Состояние:**
 
-**Schema locations:**
-- API Zod schemas: `packages/shared/src/schemas.ts`
-- Prisma enums: `packages/db/prisma/schema.prisma`
-- Route handlers: `apps/api/src/routes/`
-- Frontend API calls: `apps/frontend/src/`
+```ts
+const [testing, setTesting] = useState(false)
+const [testResult, setTestResult] = useState<{ ok: boolean; provider: string; message: string; latencyMs: number } | null>(null)
+```
 
-**Common fix patterns:**
-- Enum mismatch → align frontend constants with `packages/db/prisma/schema.prisma` enums
-- Field missing in request body → check schema default, add to frontend form
-- UUID not generated → ensure `id: randomUUID()` in every `.create()` call (Wave 13 fix)
-- Prisma P2025 (not found) → check membership guard returns 404 not 500
+**Функция:**
+
+```ts
+const testModel = async () => {
+  if (!activeProject) return
+  setTesting(true)
+  setTestResult(null)
+  try {
+    const { data } = await apiFetch<{ data: { ok: boolean; provider: string; message: string; latencyMs: number } }>(
+      `/api/projects/${activeProject.id}/model-config/test`,
+      { method: 'POST' }
+    )
+    setTestResult(data)
+  } catch (err: any) {
+    setTestResult({ ok: false, provider: provider, message: err.message ?? 'Ошибка запроса', latencyMs: 0 })
+  } finally {
+    setTesting(false)
+  }
+}
+```
+
+**Кнопка — добавить рядом с «Сохранить»:**
+
+```tsx
+<div className="flex items-center gap-2">
+  <button type="submit" disabled={modelSaving}
+    className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
+    {modelSaving ? 'Сохранение...' : 'Сохранить'}
+  </button>
+  <button
+    type="button"
+    onClick={testModel}
+    disabled={testing}
+    className="rounded-md border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+  >
+    {testing ? 'Тестирование...' : 'Тест модели'}
+  </button>
+</div>
+```
+
+**Блок результата — добавить сразу под кнопками:**
+
+```tsx
+{testResult && (
+  testResult.ok ? (
+    <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30 p-4 space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-green-500" />
+        <p className="text-xs font-medium text-green-800 dark:text-green-300">
+          Модель {testResult.provider} готова к работе
+        </p>
+      </div>
+      <p className="text-xs text-green-700 dark:text-green-400">Ответ: {testResult.message}</p>
+      <p className="text-[11px] text-muted-foreground">{testResult.latencyMs} мс</p>
+    </div>
+  ) : (
+    <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 space-y-1">
+      <div className="flex items-center gap-2">
+        <span className="h-2 w-2 rounded-full bg-destructive" />
+        <p className="text-xs font-medium text-destructive">
+          Ошибка модели {testResult.provider}
+        </p>
+      </div>
+      <p className="text-xs text-destructive/80 break-all">{testResult.message}</p>
+    </div>
+  )
+)}
+```
+
+### Что НЕ трогать
+
+- `apps/api/src/routes/tasks.ts`
+- `WORKPLAN.md`
+- Любые n8n / workflow файлы
 
 ---
 
-## Step 3 — Frontend TypeScript Sync
-
-After any frontend fix, run:
-```bash
-cd /repo
-npx tsc --noEmit -p apps/frontend/tsconfig.json 2>&1 | head -20
-# must show 0 errors
-```
-
----
-
-## Step 4 — API TypeScript + Tests
+## Validation
 
 ```bash
 npx tsc --noEmit -p apps/api/tsconfig.json 2>&1 | head -10
-# must show 0 errors
+# must: 0 errors
 
-npx vitest run --config vitest.config.ts 2>&1 | tail -5
-# must show 127 passed (or more if you add tests)
+npx tsc --noEmit -p apps/frontend/tsconfig.json 2>&1 | head -10
+# must: 0 errors
+
+npm --prefix apps/frontend run build 2>&1 | tail -5
+# must: pass
 ```
 
----
-
-## Step 5 — Rebuild Frontend Docker Image
-
-After any frontend change, rebuild container so changes take effect:
-```bash
-docker compose build frontend && docker compose up -d frontend
-```
-
-Wait 15s, then verify: `curl -s http://localhost:3002 | head -5`
+Вручную в браузере:
+1. Открыть Настройки → Модель AI
+2. Нажать «Тест модели»
+3. Через ~2-5 сек появляется зелёный блок с «Модель CLAUDE готова к работе»
+4. Сменить API Key на невалидный → нажать «Тест модели» → красный блок с ошибкой
 
 ---
 
 ## Reporting
 
-Commit message: `fix(bugfix-v1): production error fixes Wave 14`
+Commit: `feat(wave-18): model test button in Settings/AI Model`
 
-Write to `AGENTS_CHAT.md` under `## Wave 14 → Codex`:
-- List every bug found in docker logs (even unfixed ones, with reason)
-- List every file changed with one-line description
-- Paste tsc + vitest results
-- Paste curl verification results for Bug 1 and Bug 2
-- Note any bugs that need Claude review
+Записать в `AGENTS_CHAT.md` под `## Wave 18 → Codex`:
+- Файлы изменены
+- tsc + build результаты
+- Любые нерешённые вопросы
 
-Tell human: "done, agent/bugfix-v1 ready for review"
+Сообщить пользователю: **"done, agent/wave-18 ready for review"**

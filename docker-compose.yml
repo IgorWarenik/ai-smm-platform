@@ -44,7 +44,17 @@ services:
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-aimarketer}:${POSTGRES_PASSWORD:-secure_password_change_me}@postgres:5432/${POSTGRES_DB:-ai_marketing}
       - REDIS_URL=redis://redis:6379/0
+      - MODEL_PROVIDER=${MODEL_PROVIDER:-CLAUDE}
+      - MODEL_API_KEY=${MODEL_API_KEY}
+      - MODEL_API_URL=${MODEL_API_URL}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ANTHROPIC_API_URL=${ANTHROPIC_API_URL}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - OPENAI_API_URL=${OPENAI_API_URL}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - GEMINI_API_URL=${GEMINI_API_URL}
+      - DEEPSEEK_API_KEY=${DEEPSEEK_API_KEY}
+      - DEEPSEEK_API_URL=${DEEPSEEK_API_URL}
       - VOYAGE_API_KEY=${VOYAGE_API_KEY}
       - CLAUDE_TOKEN_LIMIT=${CLAUDE_TOKEN_LIMIT:-500000}
       - VOYAGE_TOKEN_LIMIT=${VOYAGE_TOKEN_LIMIT:-250000}
@@ -61,7 +71,7 @@ services:
       - MIN_REVISION_FEEDBACK_CHARS=${MIN_REVISION_FEEDBACK_CHARS:-40}
       - RAG_MAX_CHARS_PER_CHUNK=${RAG_MAX_CHARS_PER_CHUNK:-1200}
       - RAG_MAX_TOTAL_CHARS=${RAG_MAX_TOTAL_CHARS:-4000}
-      - RAG_MIN_SIMILARITY=${RAG_MIN_SIMILARITY:-0.72}
+      - RAG_MIN_SIMILARITY=${RAG_MIN_SIMILARITY:-0.15}
       - CLAUDE_INPUT_COST_PER_MTOKENS=${CLAUDE_INPUT_COST_PER_MTOKENS:-0}
       - CLAUDE_OUTPUT_COST_PER_MTOKENS=${CLAUDE_OUTPUT_COST_PER_MTOKENS:-0}
       - JWT_SECRET=${JWT_SECRET}
@@ -125,7 +135,7 @@ services:
       - MIN_REVISION_FEEDBACK_CHARS=${MIN_REVISION_FEEDBACK_CHARS:-40}
       - RAG_MAX_CHARS_PER_CHUNK=${RAG_MAX_CHARS_PER_CHUNK:-1200}
       - RAG_MAX_TOTAL_CHARS=${RAG_MAX_TOTAL_CHARS:-4000}
-      - RAG_MIN_SIMILARITY=${RAG_MIN_SIMILARITY:-0.72}
+      - RAG_MIN_SIMILARITY=${RAG_MIN_SIMILARITY:-0.15}
       - EXECUTIONS_MODE=queue
       - GENERIC_TIMEZONE=Europe/Moscow
       - N8N_SECURE_COOKIE=false
@@ -204,12 +214,71 @@ services:
       - ai-marketing-net
     restart: unless-stopped
 
+  # Loki — log storage for Docker container logs
+  loki:
+    image: grafana/loki:2.9.8
+    container_name: ai-marketing-loki
+    command: -config.file=/etc/loki/config.yml
+    volumes:
+      - ./observability/loki/config.yml:/etc/loki/config.yml:ro
+      - loki_data:/loki
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready | grep -q ready || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - ai-marketing-net
+    restart: unless-stopped
+
+  # Promtail — ships Docker container logs into Loki
+  promtail:
+    image: grafana/promtail:2.9.8
+    container_name: ai-marketing-promtail
+    command: -config.file=/etc/promtail/config.yml
+    volumes:
+      - ./observability/promtail/config.yml:/etc/promtail/config.yml:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      loki:
+        condition: service_healthy
+    networks:
+      - ai-marketing-net
+    restart: unless-stopped
+
+  # Grafana — dashboards for Prometheus metrics and Loki logs
+  grafana:
+    image: grafana/grafana:10.4.19
+    container_name: ai-marketing-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-admin}
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3003:3000"
+    depends_on:
+      prometheus:
+        condition: service_started
+      loki:
+        condition: service_healthy
+    networks:
+      - ai-marketing-net
+    restart: unless-stopped
+
 volumes:
   postgres_data:
   redis_data:
   minio_data:
   n8n_data:
   prometheus_data:
+  loki_data:
+  grafana_data:
 
 networks:
   ai-marketing-net:

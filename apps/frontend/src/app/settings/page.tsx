@@ -9,6 +9,7 @@ import { cn } from '@/lib/utils'
 
 type Tab = 'model' | 'team' | 'project' | 'notifications' | 'billing'
 type ModelProvider = 'DEEPSEEK' | 'CLAUDE' | 'CHATGPT' | 'GEMINI'
+type ProviderKeys = Record<ModelProvider, boolean>
 
 const MODEL_OPTIONS: Array<{ value: ModelProvider; label: string; apiUrl: string }> = [
   { value: 'CLAUDE', label: 'Claude (Anthropic)', apiUrl: 'https://api.anthropic.com' },
@@ -30,14 +31,14 @@ function SettingsPageInner() {
   const [apiKey, setApiKey] = useState('')
   const [apiUrl, setApiUrl] = useState(MODEL_OPTIONS[0].apiUrl)
   const [hasKey, setHasKey] = useState(false)
+  const [providerKeys, setProviderKeys] = useState<ProviderKeys>({ CLAUDE: false, CHATGPT: false, GEMINI: false, DEEPSEEK: false })
   const [modelSaving, setModelSaving] = useState(false)
   const [modelMsg, setModelMsg] = useState('')
+  const [lastError, setLastError] = useState<{ provider: string; message: string; timestamp: string } | null>(null)
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; provider: string; message: string; latencyMs: number } | null>(null)
 
   // Project settings
-  const [projName, setProjName] = useState('')
-  const [projDesc, setProjDesc] = useState('')
-  const [projSaving, setProjSaving] = useState(false)
-  const [projMsg, setProjMsg] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState('')
   const [deleting, setDeleting] = useState(false)
 
@@ -49,11 +50,14 @@ function SettingsPageInner() {
   useEffect(() => {
     if (!activeProject) return
     const id = activeProject.id
-    apiFetch<{ data: { provider: ModelProvider; apiUrl: string; hasApiKey: boolean } }>(`/api/projects/${id}/model-config`)
-      .then(({ data }) => { setProvider(data.provider); setApiUrl(data.apiUrl); setHasKey(data.hasApiKey) })
-      .catch(() => { })
-    apiFetch<{ data: { name: string; description?: string } }>(`/api/projects/${id}`)
-      .then(({ data }) => { setProjName(data.name); setProjDesc(data.description ?? '') })
+    apiFetch<{ data: { provider: ModelProvider; apiUrl: string; hasApiKey: boolean; providerKeys?: ProviderKeys; lastError?: { provider: string; message: string; timestamp: string } | null } }>(`/api/projects/${id}/model-config`)
+      .then(({ data }) => {
+        setProvider(data.provider)
+        setApiUrl(data.apiUrl)
+        setHasKey(data.hasApiKey)
+        setProviderKeys(data.providerKeys ?? { CLAUDE: data.hasApiKey, CHATGPT: false, GEMINI: false, DEEPSEEK: false })
+        setLastError(data.lastError ?? null)
+      })
       .catch(() => { })
   }, [activeProject?.id])
 
@@ -82,25 +86,28 @@ function SettingsPageInner() {
       })
       setApiKey('')
       setHasKey(true)
+      setProviderKeys(prev => ({ ...prev, [provider]: true }))
       setModelMsg('Настройки модели сохранены')
     } catch (err: any) {
       setModelMsg(err.message ?? 'Ошибка')
     } finally { setModelSaving(false) }
   }
 
-  const saveProject = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const testModel = async () => {
     if (!activeProject) return
-    setProjSaving(true)
-    setProjMsg('')
+    setTesting(true)
+    setTestResult(null)
     try {
-      await apiFetch(`/api/projects/${activeProject.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ name: projName, description: projDesc || undefined }),
-      })
-      setProjMsg('Проект обновлён')
-    } catch (err: any) { setProjMsg(err.message ?? 'Ошибка') }
-    finally { setProjSaving(false) }
+      const { data } = await apiFetch<{ data: { ok: boolean; provider: string; message: string; latencyMs: number } }>(
+        `/api/projects/${activeProject.id}/model-config/test`,
+        { method: 'POST', body: JSON.stringify({ provider, apiKey, apiUrl }) }
+      )
+      setTestResult(data)
+    } catch (err: any) {
+      setTestResult({ ok: false, provider: provider, message: err.message ?? 'Ошибка запроса', latencyMs: 0 })
+    } finally {
+      setTesting(false)
+    }
   }
 
   const deleteProject = async () => {
@@ -110,7 +117,7 @@ function SettingsPageInner() {
       await apiFetch(`/api/projects/${activeProject.id}`, { method: 'DELETE' })
       clearActiveProject()
       router.push('/dashboard')
-    } catch (err: any) { setProjMsg(err.message ?? 'Ошибка') }
+    } catch { }
     finally { setDeleting(false) }
   }
 
@@ -128,8 +135,6 @@ function SettingsPageInner() {
     { id: 'model', label: 'Модель AI' },
     { id: 'team', label: 'Команда' },
     { id: 'project', label: 'Проект' },
-    { id: 'notifications', label: 'Уведомления' },
-    { id: 'billing', label: 'Тариф' },
   ]
 
   if (!activeProject) {
@@ -169,6 +174,9 @@ function SettingsPageInner() {
                 const p = e.target.value as ModelProvider
                 setProvider(p)
                 setApiUrl(MODEL_OPTIONS.find(o => o.value === p)?.apiUrl ?? '')
+                setHasKey(providerKeys[p] ?? false)
+                setTestResult(null)
+                setModelMsg('')
               }}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
             >
@@ -186,16 +194,62 @@ function SettingsPageInner() {
               type="password"
               value={apiKey}
               onChange={e => setApiKey(e.target.value)}
-              required
+              required={!hasKey}
               placeholder={hasKey ? 'Ключ сохранён. Введите для замены' : 'Вставьте API ключ'}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30"
             />
+            <p className="text-xs text-muted-foreground">
+              {hasKey ? `Ключ для ${MODEL_OPTIONS.find(o => o.value === provider)?.label ?? provider} сохранён` : 'Для выбранного провайдера ключ не найден'}
+            </p>
           </div>
+          {lastError && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 space-y-1">
+              <p className="text-xs font-medium text-destructive">Ошибка модели {lastError.provider}</p>
+              <p className="text-xs text-destructive/80 break-all">{lastError.message}</p>
+              <p className="text-[11px] text-muted-foreground">
+                {new Date(lastError.timestamp).toLocaleString('ru-RU')}
+              </p>
+            </div>
+          )}
           {modelMsg && <p className="text-sm text-muted-foreground">{modelMsg}</p>}
-          <button type="submit" disabled={modelSaving}
-            className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-            {modelSaving ? 'Сохранение...' : 'Сохранить'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="submit" disabled={modelSaving}
+              className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
+              {modelSaving ? 'Сохранение...' : 'Сохранить'}
+            </button>
+            <button
+              type="button"
+              onClick={testModel}
+              disabled={testing}
+              className="rounded-md border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+            >
+              {testing ? 'Тестирование...' : 'Тест модели'}
+            </button>
+          </div>
+          {testResult && (
+            testResult.ok ? (
+              <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30 p-4 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                  <p className="text-xs font-medium text-green-800 dark:text-green-300">
+                    Модель {testResult.provider} готова к работе
+                  </p>
+                </div>
+                <p className="text-xs text-green-700 dark:text-green-400">Ответ: {testResult.message}</p>
+                <p className="text-[11px] text-muted-foreground">{testResult.latencyMs} мс</p>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-destructive" />
+                  <p className="text-xs font-medium text-destructive">
+                    Ошибка модели {testResult.provider}
+                  </p>
+                </div>
+                <p className="text-xs text-destructive/80 break-all">{testResult.message}</p>
+              </div>
+            )
+          )}
         </form>
       )}
 
@@ -229,31 +283,13 @@ function SettingsPageInner() {
               ))}
             </div>
           )}
-          <p className="text-xs text-muted-foreground">Приглашение участников — TODO</p>
+          <p className="text-xs text-muted-foreground">Для приглашения участников обратитесь к администратору через API.</p>
         </div>
       )}
 
       {/* Project */}
       {tab === 'project' && (
         <div className="space-y-6">
-          <form onSubmit={saveProject} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Название проекта</label>
-              <input type="text" value={projName} onChange={e => setProjName(e.target.value)} required
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30" />
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Описание</label>
-              <textarea value={projDesc} onChange={e => setProjDesc(e.target.value)} rows={3}
-                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 min-h-[80px]" />
-            </div>
-            {projMsg && <p className="text-sm text-muted-foreground">{projMsg}</p>}
-            <button type="submit" disabled={projSaving}
-              className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-              {projSaving ? 'Сохранение...' : 'Сохранить'}
-            </button>
-          </form>
-
           <div className="rounded-lg border border-destructive/30 p-5 space-y-3">
             <p className="text-sm font-medium text-destructive">Опасная зона</p>
             <p className="text-sm text-muted-foreground">
@@ -279,17 +315,6 @@ function SettingsPageInner() {
         </div>
       )}
 
-      {tab === 'notifications' && (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">Настройки уведомлений — TODO</p>
-        </div>
-      )}
-
-      {tab === 'billing' && (
-        <div className="rounded-lg border border-dashed border-border p-8 text-center">
-          <p className="text-sm text-muted-foreground">Тарифные планы — TODO</p>
-        </div>
-      )}
     </div>
   )
 }

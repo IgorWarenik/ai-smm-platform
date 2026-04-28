@@ -165,10 +165,10 @@
 
 **Статус:** Docker Desktop после destructive reset восстановлен; стек поднят; n8n re-init выполнен; workflows pushed + activated; E2E на живом стеке зелёные.
 
-**Active bug fix owner:** Codex
-- intent: исправить `Failed to fetch` на `http://localhost:3000/projects/new` при создании проекта
-- likely files: `apps/api/src/app.ts`, возможно env/CORS docs если потребуется
-- expected validation: `tsc api`, `vitest`, CORS `curl` preflight from `Origin: http://localhost:3000`, create-project smoke
+**Active task owner:** Codex
+- intent: завершено — Wave 16-FE: `ApprovalPanel` flat restyle, `Kanban`, `/calendar`, `/library`
+- likely files: `apps/frontend/src/components/ApprovalPanel.tsx`, `apps/frontend/src/app/tasks/page.tsx`, `apps/frontend/src/app/calendar/page.tsx`, `apps/frontend/src/app/library/page.tsx`, `AGENTS_CHAT.md`, `WORKPLAN.md`
+- expected validation: `npx tsc --noEmit -p apps/frontend/tsconfig.json`, `npx vitest run --config vitest.config.ts`
 
 | Этап | Статус |
 |------|--------|
@@ -198,3 +198,111 @@
 - files touched: `apps/api/src/app.ts`, `AGENTS_CHAT.md`, `WORKPLAN.md`
 - validation: `tsc api` pass, `vitest 127/127` pass, preflight from `Origin: http://localhost:3000` → `204`, authenticated `POST /api/projects` from `3000` origin → `201`
 - next step: если пользователь продолжит работать через `3000`, можно отдельно прогнать UI smoke в браузере для `/projects/new`
+
+**Latest bug fix (2026-04-26, Codex):**
+- bug: задача после `Отправить агентам` могла отображаться как `Черновик` и не уходить моделям
+- root cause:
+  `PENDING` был замаплен во frontend как `Черновик`;
+  create-task flow не блокировал отправку без `project profile`;
+  scoring и direct Scenario A не имели таймаута, поэтому молчащий provider оставлял задачу в `QUEUED`
+- files touched: `apps/api/src/routes/tasks.ts`, `apps/api/src/services/scoring.ts`, `apps/frontend/src/components/StatusBadge.tsx`, `apps/frontend/src/app/new/page.tsx`, `apps/api/tests/tasks.test.ts`, `WORKPLAN.md`
+- validation:
+  `npx vitest run --config vitest.config.ts apps/api/tests/tasks.test.ts` → 21/21 pass
+  `npx tsc -p apps/api/tsconfig.json --noEmit` → pass
+  `npm --prefix apps/frontend run type-check` → pass
+  live smoke: create task without profile → `422 PROFILE_MISSING`; after profile PUT, create task → `QUEUED` then `AWAITING_APPROVAL` with `execution.status=COMPLETED`
+- next step: старые зависшие `QUEUED` задачи, созданные до фикса, автоматически не догонятся; их лучше пересоздать из UI после заполнения profile
+
+**Latest bug fix (2026-04-26, Codex):**
+- bug: проекты пропали из меню layout
+- root cause: `Sidebar` был статическим и вообще не рендерил список проектов, хотя `/api/projects` возвращал данные
+- files touched: `apps/frontend/src/components/layout/Sidebar.tsx`, `WORKPLAN.md`
+- validation:
+  `npm --prefix apps/frontend run type-check` → pass
+  `docker compose build frontend && docker compose up -d frontend` → pass
+  browser smoke after login: sidebar section `ПРОЕКТЫ` показывает `Smoke dispatch timeout 2026-04-26`, `Smoke task dispatch 2026-04-26`, `Печеньки`
+- next step: при желании можно отдельно ограничить список recent-projects или добавить search, но bug закрыт
+
+**Latest bug fix (2026-04-28, Codex):**
+- bug: настройки модели выглядели так, будто у всех провайдеров пропали API keys; тест модели после rebuild/restart не видел ключи кроме Anthropic
+- root cause: model config хранится не в БД, а в `/repo/.env`; `docker-compose.yml` не пробрасывал `MODEL_*`, `OPENAI_*`, `GEMINI_*`, `DEEPSEEK_*` в runtime `process.env`, а UI держал один общий `hasKey` вместо статуса по каждому провайдеру
+- files touched: `apps/api/src/routes/model-config.ts`, `apps/frontend/src/app/settings/page.tsx`, `docker-compose.yml`, `WORKPLAN.md`
+- validation: `tsc api` pass, `tsc frontend` pass, `docker compose build api frontend && docker compose up -d api frontend` pass, live `GET /model-config` shows `providerKeys` with Claude/OpenAI/Gemini present and DeepSeek absent
+- note: `projects.settings` in Postgres is `{}` for all projects; отдельной таблицы model config нет, текущий source of truth для ключей — `.env`
+
+**Latest bug fix (2026-04-28, Codex):**
+- bug: семантический поиск показывал `Результаты поиска (0)`, хотя файлы были загружены
+- root cause: default `minSimilarity=0.72` был завышен для `voyage-3-lite` embeddings; реальные top scores по текущим chunks около `0.33–0.46`. Дополнительно API restart стирал `knowledge_items.embedding`, потому что Prisma schema не знала про vector column, а entrypoint запускал `prisma db push --accept-data-loss`
+- files touched: `packages/shared/src/schemas.ts`, `packages/ai-engine/src/rag-budget.ts`, `packages/db/prisma/schema.prisma`, `docker-compose.yml`, `.env`, `.env.example`, `docs/API_SPEC.md`, `docs/ENV_SETUP.md`, `WORKPLAN.md`
+- validation: `tsc api` pass, `docker compose build api && docker compose up -d api` pass, embeddings remain `14/14` after restart, live search returns results for `Session Mind`, `инвестиции фонд активы`, `фасилитатор стратегическая сессия`
+- note: active `.workflow.ts` defaults still mention `0.72`; not edited in this fix because n8n workflow edits require separate sync/pull/push protocol. Runtime n8n gets `RAG_MIN_SIMILARITY=0.3` from `.env` after restart.
+
+**Latest frontend fix (2026-04-28, Codex):**
+- task: подсветить в выдаче базы знаний фрагмент, который считается наиболее релевантным запросу
+- files touched: `apps/frontend/src/app/project/knowledge/page.tsx`, `WORKPLAN.md`
+- behavior: search results now show a short snippet, exact query terms highlighted with `<mark>`, semantic-only matches highlighted as the relevant snippet, and similarity percent when API returns it
+- validation: `npx tsc --noEmit -p apps/frontend/tsconfig.json` pass, `docker compose build frontend && docker compose up -d frontend` pass, built bundle contains highlight classes
+
+**Latest config change (2026-04-28, Codex):**
+- task: set RAG similarity threshold to `0.15` everywhere
+- files touched: `.env`, `.env.example`, `docker-compose.yml`, `packages/ai-engine/src/rag-budget.ts`, `packages/shared/src/schemas.ts`, `docs/API_SPEC.md`, `docs/ENV_SETUP.md`, `apps/api/tests/feedback.test.ts`, `apps/api/tests/knowledge.test.ts`, active workflow files in `apps/workflows/local_5678_igor_g/personal/`, `WORKPLAN.md`
+- validation: `npx --yes n8nac list` showed active tracked local workflow dir, `npx tsc --noEmit -p apps/api/tsconfig.json` pass, `docker compose build api && docker compose up -d api` pass, API runtime has `RAG_MIN_SIMILARITY=0.15`, live search `ассистент` and `и/и помощник` return 4 results each
+
+**Latest frontend/API fix (2026-04-28, Codex):**
+- task: in file upload, replace category dropdown with file content description field
+- files touched: `apps/frontend/src/app/project/knowledge/page.tsx`, `apps/api/src/routes/knowledge.ts`, `WORKPLAN.md`
+- behavior: upload form now has `Описание содержимого файла`; frontend sends `description` in multipart upload; backend stores it in `knowledge_items.metadata.description` for every chunk; file list shows saved description; upload category falls back to `BRAND_GUIDE`
+- validation: `npx tsc --noEmit -p apps/frontend/tsconfig.json` pass, `npx tsc --noEmit -p apps/api/tsconfig.json` pass, `docker compose build api frontend && docker compose up -d api frontend` pass, frontend bundle contains `Описание содержимого файла`
+
+**Latest bug fix (2026-04-26, Codex):**
+- bug: в профиле проекта поля `Продукты / Услуги` и `Целевая аудитория` не сохраняли введённое
+- root cause: frontend отправлял `products` и `audience` как строки, а API schema ждёт массивы объектов; ошибки `PATCH /profile` проглатывались, поэтому UI выглядел как “не сохранилось”
+- files touched: `apps/frontend/src/app/project/page.tsx`, `WORKPLAN.md`
+- validation:
+  `npm --prefix apps/frontend run type-check` → pass
+  `docker compose build frontend && docker compose up -d frontend` → pass
+  browser smoke on `/project`: save both fields, reload page, values видны снова
+  API smoke: `GET /api/projects/353bda0b-5d26-435a-b33c-f5e0e3d1d5d8/profile` returns structured `products[]` and `audience[]`
+- next step: аналогичный string-vs-object UX есть ещё у некоторых сложных profile полей (`competitors`, `socialLinks`, `kpi`); чинить только если пользователь упирается в них
+
+**Latest bug fix (2026-04-26, Codex):**
+- bug: раскрытие `Tier 3 — Расширенный профиль` падало с `Objects are not valid as a React child`
+- root cause: frontend пытался рендерить сырые объекты `socialLinks` / `kpi` как React child
+- files touched: `apps/frontend/src/app/project/page.tsx`, `WORKPLAN.md`
+- validation:
+  `npm --prefix apps/frontend run type-check` → pass
+  `docker compose build frontend && docker compose up -d frontend` → pass
+  browser smoke: открыть `/project`, раскрыть `Tier 3`, поля `Соцсети (ссылки)` и `KPI / метрики` видны, `Objects are not valid as a React child` больше нет
+- next step: для consistency уже добавлен parse/save path и для `competitors`, `socialLinks`, `kpi`; если пользователь начнёт ими пользоваться, базовая форма уже готова
+
+**Latest bug fix (2026-04-26, Codex):**
+- bug: на экране задачи в статусе `На согласовании` текст и панели были белыми/плохо читаемыми
+- root cause: `ApprovalPanel` оставался на старых `glass-*` / `text-white` / `text-zinc-*` классах и не соответствовал текущей светлой теме приложения
+- files touched: `apps/frontend/src/components/ApprovalPanel.tsx`, `WORKPLAN.md`
+- validation:
+  `npm --prefix apps/frontend run type-check` → pass
+  `docker compose build frontend && docker compose up -d frontend` → pass
+  browser smoke on `/tasks?selected=5858679c-37a4-4ad5-b430-84385988f6b8`:
+  `Review Output` найден
+  `panelBg = rgb(255, 255, 255)`
+  `headingColor = rgb(9, 9, 11)`
+  `textareaColor = rgb(9, 9, 11)`
+  `paragraphColor = rgb(9, 9, 11)`
+- next step: если понадобится, можно отдельно локализовать английские подписи `Review Output`, `Approve`, `Request Revision`, но контрастный баг закрыт
+
+**Latest frontend task (2026-04-26, Codex):**
+- task: выполнить `Wave 16-FE` из `AGENT_BRIEF_CODEX.md`
+- what changed:
+  `apps/frontend/src/app/tasks/page.tsx` — добавлен toggle `List / Kanban` и kanban-колонки по статусам
+  `apps/frontend/src/app/calendar/page.tsx` — реализован календарь завершённых задач с навигацией по месяцам и сайд-панелью дня
+  `apps/frontend/src/app/library/page.tsx` — реализована библиотека готовых артефактов с copy-to-clipboard и deep-link на `/tasks?selected=<id>`
+  `apps/frontend/src/components/ApprovalPanel.tsx` — финально выровнен под flat design brief
+- validation:
+  `npx tsc --noEmit -p apps/frontend/tsconfig.json` → pass
+  `npx vitest run --config vitest.config.ts` → pass (`10 files / 128 tests`)
+  `npm --prefix apps/frontend run build` → pass
+  `git diff --check -- apps/frontend/src/components/ApprovalPanel.tsx apps/frontend/src/app/tasks/page.tsx apps/frontend/src/app/calendar/page.tsx apps/frontend/src/app/library/page.tsx WORKPLAN.md AGENTS_CHAT.md` → pass
+- handoff:
+  отчёт записан в `AGENTS_CHAT.md` под `## Wave 16-FE → Codex`
+  безопасный branch split / commit в этой сессии не делался, потому что shared worktree уже был грязным и содержал посторонние живые изменения
+- next step: Claude/пользовательский визуальный smoke на `Kanban`, `Calendar`, `Library`, затем уже отдельный чистый branch/commit если понадобится reviewable PR

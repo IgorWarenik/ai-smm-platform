@@ -135,7 +135,49 @@ export async function projectRoutes(app: FastifyInstance) {
       return reply.forbidden('Only project owner can delete')
     }
 
-    await prisma.project.delete({ where: { id: projectId } })
+    await prisma.$transaction(async (tx) => {
+      const tasks = await tx.task.findMany({
+        where: { projectId },
+        select: { id: true },
+      })
+      const taskIds = tasks.map((task) => task.id)
+
+      if (taskIds.length > 0) {
+        const executions = await tx.execution.findMany({
+          where: { taskId: { in: taskIds } },
+          select: { id: true },
+        })
+        const executionIds = executions.map((execution) => execution.id)
+
+        if (executionIds.length > 0) {
+          await tx.agentOutput.deleteMany({
+            where: { executionId: { in: executionIds } },
+          })
+        }
+
+        await tx.execution.deleteMany({
+          where: { taskId: { in: taskIds } },
+        })
+        await tx.approval.deleteMany({
+          where: { taskId: { in: taskIds } },
+        })
+        await tx.agentFeedback.deleteMany({
+          where: { taskId: { in: taskIds } },
+        })
+        await tx.conversation.deleteMany({
+          where: { taskId: { in: taskIds } },
+        })
+      }
+
+      await tx.file.deleteMany({ where: { projectId } })
+      await tx.task.deleteMany({ where: { projectId } })
+      await tx.knowledgeItem.deleteMany({ where: { projectId } })
+      await tx.projectProfile.deleteMany({ where: { projectId } })
+      await tx.billing.deleteMany({ where: { projectId } })
+      await tx.projectMember.deleteMany({ where: { projectId } })
+      await tx.project.delete({ where: { id: projectId } })
+    })
+
     return reply.code(204).send()
   })
 

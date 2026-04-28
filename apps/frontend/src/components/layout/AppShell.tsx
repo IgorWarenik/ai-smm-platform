@@ -4,12 +4,12 @@ import TopBar from './TopBar'
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex h-screen overflow-hidden bg-background">
+    <div className="flex min-h-screen bg-background px-3 py-3 sm:px-4 sm:py-4">
       <Sidebar />
-      <div className="flex flex-col flex-1 overflow-hidden min-w-0">
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden pl-3 sm:pl-4">
         <TopBar />
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-screen-xl mx-auto w-full">
+        <main className="panel-surface mt-3 flex-1 overflow-y-auto rounded-[28px] p-5 sm:p-6">
+          <div className="mx-auto w-full max-w-screen-xl">
             {children}
           </div>
         </main>

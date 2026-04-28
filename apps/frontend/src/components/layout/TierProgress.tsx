@@ -38,15 +38,19 @@ function calcScore(profile: Profile | null): number {
 export default function TierProgress({ collapsed }: { collapsed: boolean }) {
   const { activeProject } = useProject()
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [loaded, setLoaded] = useState(false)
 
   useEffect(() => {
     if (!activeProject) return
+    setLoaded(false)
     apiFetch<{ data: Profile }>(`/api/projects/${activeProject.id}/profile`)
       .then(({ data }) => setProfile(data))
       .catch(() => setProfile(null))
+      .finally(() => setLoaded(true))
   }, [activeProject?.id])
 
   if (!activeProject) return null
+  if (!loaded) return null
 
   const pct = calcScore(profile)
 
@@ -54,7 +58,7 @@ export default function TierProgress({ collapsed }: { collapsed: boolean }) {
     return (
       <div className="px-3 py-2">
         <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-          <div className="h-full bg-primary rounded-full transition-all" style={{ width: `${pct}%` }} />
+          <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
         </div>
       </div>
     )
@@ -73,9 +77,8 @@ export default function TierProgress({ collapsed }: { collapsed: boolean }) {
         <span className="text-xs font-medium text-foreground">{pct}%</span>
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-        <div className="h-full bg-primary rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
+        <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
       </div>
-      <p className="text-xs text-muted-foreground">Tier 1: {tier1Filled}/{TIER1_FIELDS.length} заполнено</p>
     </div>
   )
 }

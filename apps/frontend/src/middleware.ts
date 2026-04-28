@@ -12,7 +12,9 @@ export function middleware(request: NextRequest) {
   const isPublic = PUBLIC_PATHS.some(p => pathname.startsWith(p))
 
   if (!isPublic && !token) {
-    return NextResponse.redirect(new URL('/login', request.url))
+    const loginUrl = new URL('/login', request.url)
+    loginUrl.searchParams.set('returnTo', pathname)
+    return NextResponse.redirect(loginUrl)
   }
   if (isPublic && token) {
     return NextResponse.redirect(new URL('/dashboard', request.url))

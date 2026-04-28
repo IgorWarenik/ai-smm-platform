@@ -17,7 +17,7 @@ function readSimilarity(name: string, fallback: number): number {
 export const DEFAULT_RAG_BUDGET: RagBudget = {
   maxCharsPerChunk: readPositiveInt('RAG_MAX_CHARS_PER_CHUNK', 1200),
   maxTotalChars: readPositiveInt('RAG_MAX_TOTAL_CHARS', 4000),
-  minSimilarity: readSimilarity('RAG_MIN_SIMILARITY', 0.72),
+  minSimilarity: readSimilarity('RAG_MIN_SIMILARITY', 0.15),
 }
 
 export function resolveRagBudget(overrides: Partial<RagBudget> = {}): RagBudget {
