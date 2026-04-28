@@ -1065,3 +1065,27 @@ _See AGENT_BRIEF_CODEX.md and AGENT_BRIEF_GEMINI.md_
 - embeddings remain `14/14`
 - live search: `ассистент` returns 4 results
 - live search: `и/и помощник` returns 4 results.
+
+## Frontend Task → Codex — 2026-04-28
+
+**Task:** show which agent scenario will run while creating a task, and animate which agents communicate during task execution.
+
+**Files changed:**
+- `apps/frontend/src/components/AgentScenarioFlow.tsx`
+- `apps/frontend/src/components/NewTaskForm.tsx`
+- `apps/frontend/src/app/tasks/page.tsx`
+
+**What changed:**
+- Added reusable `AgentScenarioFlow` component for scenarios `A/B/C/D`.
+- `NewTaskForm` now shows a preliminary route while the user selects task type and writes the task text.
+- Running task detail now shows the actual `task.scenario`, agent handoffs, actions, live badge, and highlights the latest SSE `agentType`.
+
+**Validation:**
+- `npx tsc --noEmit -p apps/frontend/tsconfig.json` — pass
+- `docker compose build frontend` — pass
+- `docker compose up -d frontend` — pass
+- `curl -I http://localhost:3002/new` — expected auth redirect.
+
+**Note:**
+- Per user instruction, removed this task report from `WORKPLAN.md`.
+- Future Codex reports should go to `AGENTS_CHAT.md`, not `WORKPLAN.md`.

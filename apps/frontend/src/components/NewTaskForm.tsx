@@ -5,6 +5,7 @@ import { useProject } from '@/contexts/project'
 import MultimodalInput from '@/components/MultimodalInput'
 import TaskQualityScore from '@/components/TaskQualityScore'
 import PlatformChip from '@/components/PlatformChip'
+import AgentScenarioFlow, { estimateScenario } from '@/components/AgentScenarioFlow'
 import { cn } from '@/lib/utils'
 
 const TASK_TYPES = [
@@ -35,6 +36,7 @@ export default function NewTaskForm({ initialType = 'Авто-определен
 
   const showPlatforms = CONTENT_TYPES.has(taskType)
   const showScore = text.trim().split(/\s+/).filter(Boolean).length >= 3
+  const previewScenario = estimateScenario(taskType, text)
 
   const togglePlatform = (p: string) =>
     setPlatforms(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])
@@ -154,6 +156,11 @@ export default function NewTaskForm({ initialType = 'Авто-определен
           ))}
         </div>
       </div>
+
+      <AgentScenarioFlow
+        scenario={previewScenario}
+        title="Предварительный маршрут"
+      />
 
       <MultimodalInput
         value={text}

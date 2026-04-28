@@ -110,8 +110,22 @@ function KnowledgePageInner() {
 
   const fetch_ = () => {
     if (!activeProject) return
-    apiFetch<{ data: KItem[] }>(`/api/projects/${activeProject.id}/knowledge`)
-      .then(({ data }) => setItems(data))
+    const pageSize = 100
+    const loadPage = (page: number): Promise<{ data: KItem[]; total: number }> =>
+      apiFetch<{ data: KItem[]; total: number }>(`/api/projects/${activeProject.id}/knowledge?page=${page}&pageSize=${pageSize}`)
+
+    loadPage(1)
+      .then(async (firstPage) => {
+        const allItems = [...firstPage.data]
+        const totalPages = Math.ceil(firstPage.total / pageSize)
+
+        for (let page = 2; page <= totalPages; page++) {
+          const nextPage = await loadPage(page)
+          allItems.push(...nextPage.data)
+        }
+
+        setItems(allItems)
+      })
       .catch(() => { })
       .finally(() => setLoading(false))
   }

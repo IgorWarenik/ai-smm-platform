@@ -7,6 +7,7 @@ import { useTaskStream } from '@/hooks/useTaskStream'
 import AppShell from '@/components/layout/AppShell'
 import StatusBadge from '@/components/StatusBadge'
 import AgentAvatar from '@/components/AgentAvatar'
+import AgentScenarioFlow from '@/components/AgentScenarioFlow'
 import ApprovalPanel from '@/components/ApprovalPanel'
 import NewTaskForm from '@/components/NewTaskForm'
 import { Trash2 } from 'lucide-react'
@@ -51,6 +52,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
   const [saving, setSaving] = useState(false)
   const streamEnabled = task.status === 'RUNNING'
   const streamEvents = useTaskStream(projectId, task.id, streamEnabled)
+  const activeAgent = [...streamEvents].reverse().find(ev => ev.agentType)?.agentType ?? null
 
   const submitClarify = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -145,10 +147,12 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
       {/* Live stream */}
       {task.status === 'RUNNING' && (
         <div className="space-y-3">
-          <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-blue-500 animate-pulse" />
-            <p className="text-sm font-medium text-foreground">Агент работает</p>
-          </div>
+          <AgentScenarioFlow
+            scenario={task.scenario}
+            activeAgent={activeAgent}
+            running
+            title="Выполнение задачи"
+          />
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {streamEvents.map((ev, i) => (
               <div key={i} className="rounded-md border-l-2 border-blue-200 bg-blue-50/50 py-2 pl-3 pr-2 text-sm">
