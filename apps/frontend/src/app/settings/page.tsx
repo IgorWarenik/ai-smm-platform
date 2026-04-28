@@ -32,6 +32,8 @@ function SettingsPageInner() {
   const [hasKey, setHasKey] = useState(false)
   const [modelSaving, setModelSaving] = useState(false)
   const [modelMsg, setModelMsg] = useState('')
+  const [testing, setTesting] = useState(false)
+  const [testResult, setTestResult] = useState<{ ok: boolean; provider: string; message: string; latencyMs: number } | null>(null)
 
   // Project settings
   const [projName, setProjName] = useState('')
@@ -86,6 +88,23 @@ function SettingsPageInner() {
     } catch (err: any) {
       setModelMsg(err.message ?? 'Ошибка')
     } finally { setModelSaving(false) }
+  }
+
+  const testModel = async () => {
+    if (!activeProject) return
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const { data } = await apiFetch<{ data: { ok: boolean; provider: string; message: string; latencyMs: number } }>(
+        `/api/projects/${activeProject.id}/model-config/test`,
+        { method: 'POST' }
+      )
+      setTestResult(data)
+    } catch (err: any) {
+      setTestResult({ ok: false, provider: provider, message: err.message ?? 'Ошибка запроса', latencyMs: 0 })
+    } finally {
+      setTesting(false)
+    }
   }
 
   const saveProject = async (e: React.FormEvent) => {
@@ -192,10 +211,44 @@ function SettingsPageInner() {
             />
           </div>
           {modelMsg && <p className="text-sm text-muted-foreground">{modelMsg}</p>}
-          <button type="submit" disabled={modelSaving}
-            className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-            {modelSaving ? 'Сохранение...' : 'Сохранить'}
-          </button>
+          <div className="flex items-center gap-2">
+            <button type="submit" disabled={modelSaving}
+              className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
+              {modelSaving ? 'Сохранение...' : 'Сохранить'}
+            </button>
+            <button
+              type="button"
+              onClick={testModel}
+              disabled={testing}
+              className="rounded-md border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground disabled:opacity-50 transition-colors"
+            >
+              {testing ? 'Тестирование...' : 'Тест модели'}
+            </button>
+          </div>
+          {testResult && (
+            testResult.ok ? (
+              <div className="rounded-lg border border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30 p-4 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-green-500" />
+                  <p className="text-xs font-medium text-green-800 dark:text-green-300">
+                    Модель {testResult.provider} готова к работе
+                  </p>
+                </div>
+                <p className="text-xs text-green-700 dark:text-green-400">Ответ: {testResult.message}</p>
+                <p className="text-[11px] text-muted-foreground">{testResult.latencyMs} мс</p>
+              </div>
+            ) : (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full bg-destructive" />
+                  <p className="text-xs font-medium text-destructive">
+                    Ошибка модели {testResult.provider}
+                  </p>
+                </div>
+                <p className="text-xs text-destructive/80 break-all">{testResult.message}</p>
+              </div>
+            )
+          )}
         </form>
       )}
 

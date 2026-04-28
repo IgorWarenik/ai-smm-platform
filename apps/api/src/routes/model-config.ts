@@ -4,6 +4,7 @@ import type { FastifyInstance } from 'fastify'
 import { z } from 'zod'
 import { prisma } from '@ai-marketing/db'
 import { MemberRole } from '@ai-marketing/shared'
+import { runAgent } from '@ai-marketing/ai-engine'
 
 const ModelProviderSchema = z.enum(['DEEPSEEK', 'CLAUDE', 'CHATGPT', 'GEMINI'])
 
@@ -68,6 +69,22 @@ async function writeModelConfigToEnv(config: z.infer<typeof ModelConfigSchema>) 
   process.env[provider.apiUrlEnv] = config.apiUrl
 }
 
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+    promise.then(
+      (value) => {
+        clearTimeout(timer)
+        resolve(value)
+      },
+      (error) => {
+        clearTimeout(timer)
+        reject(error)
+      }
+    )
+  })
+}
+
 export async function modelConfigRoutes(app: FastifyInstance) {
   app.addHook('preHandler', app.authenticate)
 
@@ -118,5 +135,46 @@ export async function modelConfigRoutes(app: FastifyInstance) {
         restartRequired: false,
       },
     })
+  })
+
+  app.post('/test', async (request, reply) => {
+    const { projectId } = request.params as { projectId: string }
+    const userId = request.user.sub
+
+    const membership = await prisma.projectMember.findUnique({
+      where: { userId_projectId: { userId, projectId } },
+    })
+    if (!membership) return reply.notFound('Project not found')
+
+    const start = Date.now()
+    try {
+      const result = await withTimeout(
+        runAgent({
+          systemPrompt: 'You are a helpful assistant. Reply briefly.',
+          userMessage: 'Reply with exactly one word: OK',
+          maxTokens: 20,
+          operation: 'model.test',
+        }),
+        10000,
+        'model test'
+      )
+      return reply.send({
+        data: {
+          ok: true,
+          provider: process.env.MODEL_PROVIDER ?? 'CLAUDE',
+          message: result.trim(),
+          latencyMs: Date.now() - start,
+        },
+      })
+    } catch (err) {
+      return reply.send({
+        data: {
+          ok: false,
+          provider: process.env.MODEL_PROVIDER ?? 'CLAUDE',
+          message: err instanceof Error ? err.message : String(err),
+          latencyMs: Date.now() - start,
+        },
+      })
+    }
   })
 }

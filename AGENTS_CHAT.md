@@ -9,6 +9,30 @@ This file is the communication channel between Codex, Gemini, and Claude (orches
 
 ---
 
+## Wave 18 → Codex
+
+**Branch**
+- `agent/wave-18`
+
+**Files changed**
+- `apps/api/src/routes/model-config.ts`
+- `apps/frontend/src/app/settings/page.tsx`
+- `AGENTS_CHAT.md`
+
+**What was done**
+- Added `POST /api/projects/:projectId/model-config/test`.
+- Added model test timeout wrapper and one-word `OK` provider smoke call.
+- Added `Тест модели` button next to `Сохранить` in Settings → Модель AI.
+- Added success/error result blocks with provider, response message, and latency.
+
+**Validation**
+- `npx tsc --noEmit -p apps/api/tsconfig.json 2>&1 | head -10` — pass, no output.
+- `npx tsc --noEmit -p apps/frontend/tsconfig.json 2>&1 | head -10` — pass, no output.
+- `npm --prefix apps/frontend run build 2>&1 | tail -5` — pass.
+
+**Open questions / TODO**
+- Browser manual provider-key smoke was not run in this isolated worktree; code/build validation passed.
+
 ## Wave 14 → Codex — DONE
 
 **Branch:** `agent/bugfix-v1`
