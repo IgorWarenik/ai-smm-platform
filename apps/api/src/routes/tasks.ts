@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto'
-import { Redis } from 'ioredis'
 import { prisma, withProjectContext } from '@ai-marketing/db'
+import { getRedis, MODEL_LAST_ERROR_KEY, MODEL_LAST_ERROR_TTL } from '../lib/redis-client'
+import { withTimeout } from '../lib/utils'
 import {
   ClarificationResponseSchema,
   CreateTaskSchema,
@@ -25,19 +26,13 @@ import { scoreTask } from '../services/scoring'
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const AGENT_CALL_TIMEOUT_MS = Number(process.env.AGENT_CALL_TIMEOUT_MS || 20000)
 
-const MODEL_LAST_ERROR_KEY = 'model:last_error'
-const MODEL_LAST_ERROR_TTL = 86400 // 24h
-
 async function writeModelError(err: unknown): Promise<void> {
-  const redisUrl = process.env.REDIS_URL
-  if (!redisUrl) return
   try {
+    const redis = getRedis()
+    if (!redis) return
     const provider = process.env.MODEL_PROVIDER ?? 'CLAUDE'
     const message = err instanceof Error ? err.message : String(err)
-    const redis = new Redis(redisUrl, { lazyConnect: true, enableOfflineQueue: false })
-    await redis.connect()
     await redis.set(MODEL_LAST_ERROR_KEY, JSON.stringify({ provider, message, timestamp: new Date().toISOString() }), 'EX', MODEL_LAST_ERROR_TTL)
-    redis.disconnect()
   } catch { /* non-critical */ }
 }
 const DIRECT_SCENARIO_A_CONTENT_KEYWORDS = [
@@ -60,21 +55,7 @@ function assertUuid(reply: FastifyReply, value: string, label: string): boolean 
   return true
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error) => {
-        clearTimeout(timer)
-        reject(error)
-      }
-    )
-  })
-}
+
 
 function buildProfileContext(profile: {
   companyName: string

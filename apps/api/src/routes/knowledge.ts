@@ -250,7 +250,7 @@ export async function knowledgeRoutes(app: FastifyInstance) {
             })
           })
           .catch((err) => {
-            console.error({ err, itemId }, 'Failed to re-embed updated knowledge item')
+            app.log.warn({ err, itemId }, 'Failed to re-embed updated knowledge item')
           })
       }
 

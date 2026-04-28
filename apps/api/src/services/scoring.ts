@@ -1,23 +1,8 @@
 import { getTokenBudget, makeSemanticCacheKey, runAgent } from '@ai-marketing/ai-engine'
 import { ScenarioType, TASK_SCORE_THRESHOLD, TaskScoringResult } from '@ai-marketing/shared'
+import { withTimeout } from '../lib/utils'
 
 const TASK_SCORING_TIMEOUT_MS = Number(process.env.TASK_SCORING_TIMEOUT_MS || process.env.AGENT_CALL_TIMEOUT_MS || 15000)
-
-function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-    promise.then(
-      (value) => {
-        clearTimeout(timer)
-        resolve(value)
-      },
-      (error) => {
-        clearTimeout(timer)
-        reject(error)
-      }
-    )
-  })
-}
 
 function isMarketingLike(input: string): boolean {
   const normalized = input.toLowerCase()
