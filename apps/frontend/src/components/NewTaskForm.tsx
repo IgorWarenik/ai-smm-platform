@@ -2,6 +2,8 @@
 import { useState } from 'react'
 import { apiFetch } from '@/lib/api'
 import { useProject } from '@/contexts/project'
+import { useLang } from '@/contexts/lang'
+import type { TranslationKey } from '@/lib/i18n'
 import MultimodalInput from '@/components/MultimodalInput'
 import TaskQualityScore from '@/components/TaskQualityScore'
 import PlatformChip from '@/components/PlatformChip'
@@ -9,14 +11,36 @@ import AgentScenarioFlow, { estimateScenario } from '@/components/AgentScenarioF
 import { cn } from '@/lib/utils'
 
 const TASK_TYPES = [
-  { group: 'Контент', items: ['Авто-определение', 'Пост', 'Карусель', 'Истории', 'Reels-сценарий', 'TikTok-сценарий', 'Контент-план', 'Промпт для изображения'] },
-  { group: 'Стратегия', items: ['SMM-стратегия', 'Анализ ЦА', 'Анализ конкурентов', 'Медиаплан'] },
-  { group: 'Кампания', items: ['SMM-кампания запуск'] },
+  { group: 'Контент', groupKey: 'newTask.group.content' as TranslationKey, items: [
+    { value: 'Авто-определение', key: 'newTask.type.auto' as TranslationKey },
+    { value: 'Пост', key: 'newTask.type.post' as TranslationKey },
+    { value: 'Карусель', key: 'newTask.type.carousel' as TranslationKey },
+    { value: 'Истории', key: 'newTask.type.stories' as TranslationKey },
+    { value: 'Reels-сценарий', key: 'newTask.type.reels' as TranslationKey },
+    { value: 'TikTok-сценарий', key: 'newTask.type.tiktok' as TranslationKey },
+    { value: 'Контент-план', key: 'newTask.type.contentPlan' as TranslationKey },
+    { value: 'Промпт для изображения', key: 'newTask.type.imagePrompt' as TranslationKey },
+  ]},
+  { group: 'Стратегия', groupKey: 'newTask.group.strategy' as TranslationKey, items: [
+    { value: 'SMM-стратегия', key: 'newTask.type.smmStrategy' as TranslationKey },
+    { value: 'Анализ ЦА', key: 'newTask.type.audienceAnalysis' as TranslationKey },
+    { value: 'Анализ конкурентов', key: 'newTask.type.competitorAnalysis' as TranslationKey },
+    { value: 'Медиаплан', key: 'newTask.type.mediaPlan' as TranslationKey },
+  ]},
+  { group: 'Кампания', groupKey: 'newTask.group.campaign' as TranslationKey, items: [
+    { value: 'SMM-кампания запуск', key: 'newTask.type.campaignLaunch' as TranslationKey },
+  ]},
 ]
-const ALL_TYPES = TASK_TYPES.flatMap(g => g.items)
-const CONTENT_TYPES = new Set(['Пост', 'Карусель', 'Истории', 'Reels-сценарий', 'TikTok-сценарий', 'Контент-план', 'Промпт для изображения'])
+
+const ALL_TYPE_ITEMS = TASK_TYPES.flatMap(g => g.items)
+const CONTENT_VALUES = new Set(['Пост', 'Карусель', 'Истории', 'Reels-сценарий', 'TikTok-сценарий', 'Контент-план', 'Промпт для изображения'])
 const PLATFORMS = ['Instagram', 'TikTok', 'Telegram', 'VK', 'YouTube', 'LinkedIn', 'X', 'Pinterest']
-const PRIORITIES = ['Срочно', 'Стандарт', 'Низкий']
+
+const PRIORITY_ITEMS = [
+  { value: 'Срочно', key: 'newTask.priority.urgent' as TranslationKey },
+  { value: 'Стандарт', key: 'newTask.priority.standard' as TranslationKey },
+  { value: 'Низкий', key: 'newTask.priority.low' as TranslationKey },
+]
 
 interface Props {
   initialType?: string
@@ -26,6 +50,7 @@ interface Props {
 
 export default function NewTaskForm({ initialType = 'Авто-определение', onSuccess, onCancel }: Props) {
   const { activeProject } = useProject()
+  const { t } = useLang()
 
   const [text, setText] = useState('')
   const [taskType, setTaskType] = useState(initialType)
@@ -34,7 +59,7 @@ export default function NewTaskForm({ initialType = 'Авто-определен
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  const showPlatforms = CONTENT_TYPES.has(taskType)
+  const showPlatforms = CONTENT_VALUES.has(taskType)
   const showScore = text.trim().split(/\s+/).filter(Boolean).length >= 3
   const previewScenario = estimateScenario(taskType, text)
 
@@ -42,7 +67,7 @@ export default function NewTaskForm({ initialType = 'Авто-определен
     setPlatforms(prev => prev.includes(p) ? prev.filter(x => x !== p) : [...prev, p])
 
   const handleSubmit = async (payload: { text: string; attachments: File[]; urls: string[] }) => {
-    if (!activeProject) { setError('Выберите проект на дашборде'); return }
+    if (!activeProject) { setError(t('newTask.errorNoProject')); return }
     if (!payload.text.trim()) return
     setSubmitting(true)
     setError('')
@@ -62,10 +87,10 @@ export default function NewTaskForm({ initialType = 'Авто-определен
     } catch (err: any) {
       setError(
         err?.code === 'PROFILE_MISSING'
-          ? 'Перед отправкой заполните профиль проекта: компания, описание, ниша и география.'
+          ? t('newTask.errorProfileMissing')
           : err?.code === 'TASK_SCORE_TOO_LOW'
-            ? 'Задача слишком расплывчата. Добавьте контекст, платформу и цель.'
-            : err?.message ?? 'Ошибка создания задачи'
+            ? t('newTask.errorTooVague')
+            : err?.message ?? t('common.error')
       )
     } finally {
       setSubmitting(false)
@@ -76,10 +101,8 @@ export default function NewTaskForm({ initialType = 'Авто-определен
     <div className="mx-auto max-w-2xl space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-[22px] font-medium text-foreground">Что нужно сделать?</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Опишите задачу — агент выполнит её на уровне Senior SMM-специалиста
-          </p>
+          <h1 className="text-[22px] font-medium text-foreground">{t('newTask.title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('newTask.subtitle')}</p>
         </div>
         {onCancel && (
           <button
@@ -87,34 +110,34 @@ export default function NewTaskForm({ initialType = 'Авто-определен
             onClick={onCancel}
             className="mt-1 shrink-0 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            ✕ Закрыть
+            {t('common.close')}
           </button>
         )}
       </div>
 
       {!activeProject && (
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          Проект не выбран.{' '}
-          <a href="/dashboard" className="font-medium underline">Выберите на дашборде</a>
+          {t('common.noProject')}{' '}
+          <a href="/dashboard" className="font-medium underline">{t('common.selectOnDashboard')}</a>
         </div>
       )}
 
       <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Тип задачи</p>
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('newTask.taskType')}</p>
         <div className="flex flex-wrap gap-1.5">
-          {ALL_TYPES.map(t => (
+          {ALL_TYPE_ITEMS.map(({ value, key }) => (
             <button
-              key={t}
+              key={value}
               type="button"
-              onClick={() => setTaskType(t)}
+              onClick={() => setTaskType(value)}
               className={cn(
                 'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                taskType === t
+                taskType === value
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground'
               )}
             >
-              {t}
+              {t(key)}
             </button>
           ))}
         </div>
@@ -122,7 +145,7 @@ export default function NewTaskForm({ initialType = 'Авто-определен
 
       {showPlatforms && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Платформы</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('newTask.platforms')}</p>
           <div className="flex flex-wrap gap-1.5">
             {PLATFORMS.map(p => (
               <PlatformChip
@@ -137,21 +160,21 @@ export default function NewTaskForm({ initialType = 'Авто-определен
       )}
 
       <div className="space-y-2">
-        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Приоритет</p>
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('newTask.priority')}</p>
         <div className="flex gap-1.5">
-          {PRIORITIES.map(p => (
+          {PRIORITY_ITEMS.map(({ value, key }) => (
             <button
-              key={p}
+              key={value}
               type="button"
-              onClick={() => setPriority(p)}
+              onClick={() => setPriority(value)}
               className={cn(
                 'rounded-full border px-3 py-1 text-xs font-medium transition-colors',
-                priority === p
+                priority === value
                   ? 'border-primary bg-primary text-primary-foreground'
                   : 'border-border bg-card text-muted-foreground hover:border-primary/50 hover:text-foreground'
               )}
             >
-              {p}
+              {t(key)}
             </button>
           ))}
         </div>
@@ -159,7 +182,7 @@ export default function NewTaskForm({ initialType = 'Авто-определен
 
       <AgentScenarioFlow
         scenario={previewScenario}
-        title="Предварительный маршрут"
+        title={t('newTask.route')}
       />
 
       <MultimodalInput
@@ -167,7 +190,7 @@ export default function NewTaskForm({ initialType = 'Авто-определен
         onChange={setText}
         onSubmit={handleSubmit}
         disabled={submitting}
-        placeholder="Опишите задачу подробно — платформу, цель, аудиторию, тон, объём..."
+        placeholder={t('newTask.placeholder')}
       />
 
       <TaskQualityScore text={text} visible={showScore} />
@@ -185,7 +208,7 @@ export default function NewTaskForm({ initialType = 'Авто-определен
           disabled={submitting || !text.trim() || !activeProject}
           className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
-          {submitting ? 'Отправка...' : 'Отправить агентам'}
+          {submitting ? t('newTask.submitting') : t('newTask.submit')}
         </button>
         {onCancel && (
           <button
@@ -193,7 +216,7 @@ export default function NewTaskForm({ initialType = 'Авто-определен
             onClick={onCancel}
             className="rounded-md border border-border px-5 py-2.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
           >
-            Отмена
+            {t('common.cancel')}
           </button>
         )}
       </div>

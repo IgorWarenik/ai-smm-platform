@@ -18,16 +18,17 @@ import TierProgress from './TierProgress'
 import { cn } from '@/lib/utils'
 import { apiFetch } from '@/lib/api'
 import { useProject } from '@/contexts/project'
+import { useLang } from '@/contexts/lang'
 
 const NAV = [
-  { icon: LayoutDashboard, label: 'Главная', href: '/dashboard' },
-  { icon: ListTodo, label: 'Задачи', href: '/tasks' },
-  { icon: Calendar, label: 'Календарь', href: '/calendar' },
-  { icon: Library, label: 'Библиотека', href: '/library' },
-  { icon: Building2, label: 'Проект', href: '/project' },
-  { icon: BookOpen, label: 'База знаний', href: '/project/knowledge' },
-  { icon: Settings, label: 'Настройки', href: '/settings' },
-]
+  { icon: LayoutDashboard, key: 'nav.home', href: '/dashboard' },
+  { icon: ListTodo, key: 'nav.tasks', href: '/tasks' },
+  { icon: Calendar, key: 'nav.calendar', href: '/calendar' },
+  { icon: Library, key: 'nav.library', href: '/library' },
+  { icon: Building2, key: 'nav.project', href: '/project' },
+  { icon: BookOpen, key: 'nav.knowledge', href: '/project/knowledge' },
+  { icon: Settings, key: 'nav.settings', href: '/settings' },
+] as const
 
 const STORAGE_KEY = 'sidebar_collapsed'
 
@@ -38,6 +39,7 @@ type Project = {
 
 export default function Sidebar() {
   const pathname = usePathname()
+  const { t } = useLang()
   const [collapsed, setCollapsed] = useState(false)
   const [projects, setProjects] = useState<Project[]>([])
   const { activeProject, setActiveProject, clearActiveProject } = useProject()
@@ -100,7 +102,8 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-0.5">
-        {NAV.map(({ icon: Icon, label, href }) => {
+        {NAV.map(({ icon: Icon, key, href }) => {
+          const label = t(key)
           const active = href === '/dashboard' || href === '/project'
             ? pathname === href
             : pathname.startsWith(href)
@@ -127,7 +130,7 @@ export default function Sidebar() {
           {collapsed ? (
             <Link
               href="/dashboard"
-              title="Проекты"
+              title={t('nav.projects')}
               className="flex justify-center rounded-2xl px-2 py-2.5 text-muted-foreground hover:bg-accent/60 hover:text-foreground transition-colors"
             >
               <FolderOpen size={20} />
@@ -136,13 +139,13 @@ export default function Sidebar() {
             <>
               <div className="mb-2 flex items-center justify-between px-2">
                 <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                  Проекты
+                  {t('nav.projects')}
                 </span>
                 <Link
                   href="/dashboard"
                   className="text-[11px] text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  Все
+                  {t('nav.all')}
                 </Link>
               </div>
 
@@ -152,7 +155,7 @@ export default function Sidebar() {
                     href="/dashboard"
                     className="block rounded-2xl px-3 py-2.5 text-xs text-muted-foreground hover:bg-accent/60 hover:text-foreground transition-colors"
                   >
-                    Выбрать проект
+                    {t('nav.selectProject')}
                   </Link>
                 ) : (
                   projects.slice(0, 6).map((project) => {
@@ -198,7 +201,7 @@ export default function Sidebar() {
         {collapsed ? <ChevronRight size={16} /> : (
           <>
             <ChevronLeft size={16} />
-            <span className="text-xs">Свернуть</span>
+            <span className="text-xs">{t('nav.collapse')}</span>
           </>
         )}
       </button>

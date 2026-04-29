@@ -3,10 +3,12 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/auth'
+import { useLang } from '@/contexts/lang'
 
 export default function RegisterPage() {
   const router = useRouter()
   const { register } = useAuth()
+  const { t } = useLang()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -21,7 +23,7 @@ export default function RegisterPage() {
       await register(email, password, name)
       router.push('/dashboard')
     } catch (err: any) {
-      setError(err.message ?? 'Ошибка регистрации')
+      setError(err.message ?? t('auth.register.error'))
     } finally {
       setLoading(false)
     }
@@ -38,13 +40,13 @@ export default function RegisterPage() {
             <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm">
               AI
             </div>
-            <h1 className="text-[30px] font-semibold tracking-[-0.03em] text-foreground">Создать аккаунт</h1>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">Подключитесь к платформе и соберите рабочее пространство для команды маркетинга.</p>
+            <h1 className="text-[30px] font-semibold tracking-[-0.03em] text-foreground">{t('auth.register.title')}</h1>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('auth.register.subtitle')}</p>
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Имя</label>
+              <label className="text-sm font-medium text-foreground">{t('auth.register.name')}</label>
               <input
                 type="text"
                 value={name}
@@ -65,7 +67,7 @@ export default function RegisterPage() {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-sm font-medium text-foreground">Пароль</label>
+              <label className="text-sm font-medium text-foreground">{t('auth.login.password')}</label>
               <input
                 type="password"
                 value={password}
@@ -81,14 +83,14 @@ export default function RegisterPage() {
               disabled={loading}
               className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
-              {loading ? 'Создание...' : 'Зарегистрироваться'}
+              {loading ? t('auth.register.submitting') : t('auth.register.submit')}
             </button>
           </form>
 
           <p className="mt-6 text-center text-sm text-muted-foreground">
-            Уже есть аккаунт?{' '}
+            {t('auth.register.hasAccount')}{' '}
             <Link href="/login" className="font-medium text-foreground hover:underline">
-              Войти
+              {t('auth.register.login')}
             </Link>
           </p>
         </div>
@@ -101,16 +103,12 @@ export default function RegisterPage() {
             </div>
 
             <h2 className="mt-10 max-w-md text-5xl font-semibold leading-[1.05] tracking-[-0.04em]">
-              Постройте систему, в которой маркетинг движется без провалов между идеей и выпуском.
+              {t('auth.hero.title')}
             </h2>
             <div className="mt-10 grid gap-3">
-              {[
-                'Проекты, знания и артефакты в одном контуре',
-                'Сценарии AI-исполнения без ручной сборки',
-                'Понятные ревью и календарь публикаций',
-              ].map((item) => (
-                <div key={item} className="rounded-2xl border border-white/14 bg-white/10 px-4 py-3 text-sm text-white/86 backdrop-blur-sm">
-                  {item}
+              {(['auth.hero.feature1', 'auth.hero.feature2', 'auth.hero.feature3'] as const).map((key) => (
+                <div key={key} className="rounded-2xl border border-white/14 bg-white/10 px-4 py-3 text-sm text-white/86 backdrop-blur-sm">
+                  {t(key)}
                 </div>
               ))}
             </div>

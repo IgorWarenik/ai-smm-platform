@@ -3,6 +3,7 @@ import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { apiFetch } from '@/lib/api'
 import { useProject } from '@/contexts/project'
+import { useLang } from '@/contexts/lang'
 import { useTaskStream } from '@/hooks/useTaskStream'
 import AppShell from '@/components/layout/AppShell'
 import StatusBadge from '@/components/StatusBadge'
@@ -24,14 +25,6 @@ type Task = {
 }
 
 const STATUSES = ['ALL', 'RUNNING', 'AWAITING_APPROVAL', 'AWAITING_CLARIFICATION', 'COMPLETED', 'FAILED']
-const STATUS_LABELS: Record<string, string> = {
-  ALL: 'Все',
-  RUNNING: 'В работе',
-  AWAITING_APPROVAL: 'На согласовании',
-  AWAITING_CLARIFICATION: 'Уточнение',
-  COMPLETED: 'Готово',
-  FAILED: 'Ошибка',
-}
 
 function mergeTask(existing: Task | undefined, incoming: Task): Task {
   if (!existing) return incoming
@@ -45,6 +38,7 @@ function mergeTask(existing: Task | undefined, incoming: Task): Task {
 }
 
 function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: string; onRefresh: () => void }) {
+  const { t } = useLang()
   const [answer, setAnswer] = useState('')
   const [clarifying, setClarifying] = useState(false)
   const [editMode, setEditMode] = useState(false)
@@ -97,11 +91,11 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
             <div className="flex gap-2">
               <button onClick={saveEdit} disabled={saving}
                 className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                {saving ? 'Сохранение...' : 'Сохранить'}
+                {saving ? t('common.saving') : t('common.save')}
               </button>
               <button onClick={() => setEditMode(false)}
                 className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-                Отмена
+                {t('common.cancel')}
               </button>
             </div>
           </div>
@@ -113,7 +107,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
                 onClick={() => { setEditVal(task.input); setEditMode(true) }}
                 className="absolute right-0 top-0 hidden rounded-md border border-border bg-card px-2 py-1 text-xs text-muted-foreground group-hover:block hover:text-foreground"
               >
-                Изменить
+                {t('common.edit')}
               </button>
             )}
           </div>
@@ -123,7 +117,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
       {/* Clarification needed */}
       {task.status === 'AWAITING_CLARIFICATION' && (
         <form onSubmit={submitClarify} className="space-y-3 rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <p className="text-sm font-medium text-amber-800">Агенту нужно уточнение</p>
+          <p className="text-sm font-medium text-amber-800">{t('tasks.clarification.title')}</p>
           {task.clarificationNote && (
             <ul className="list-inside list-disc space-y-1 text-sm text-amber-700">
               {task.clarificationNote.split('\n').filter(Boolean).map((q, i) => <li key={i}>{q}</li>)}
@@ -134,12 +128,12 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
             onChange={e => setAnswer(e.target.value)}
             required
             rows={3}
-            placeholder="Ваш ответ..."
+            placeholder={t('tasks.clarification.placeholder')}
             className="w-full rounded-md border border-amber-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-amber-300/50 min-h-[80px]"
           />
           <button type="submit" disabled={clarifying}
             className="rounded-md bg-amber-600 px-4 py-2 text-xs font-medium text-white hover:bg-amber-700 disabled:opacity-50">
-            {clarifying ? 'Отправка...' : 'Ответить'}
+            {clarifying ? t('common.sending') : t('tasks.clarification.submit')}
           </button>
         </form>
       )}
@@ -151,7 +145,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
             scenario={task.scenario}
             activeAgent={activeAgent}
             running
-            title="Выполнение задачи"
+            title={t('tasks.stream.title')}
           />
           <div className="space-y-2 max-h-64 overflow-y-auto">
             {streamEvents.map((ev, i) => (
@@ -167,7 +161,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
               </div>
             ))}
             {streamEvents.length === 0 && (
-              <p className="text-xs text-muted-foreground">Ожидание вывода агента...</p>
+              <p className="text-xs text-muted-foreground">{t('tasks.stream.waiting')}</p>
             )}
           </div>
         </div>
@@ -188,7 +182,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
       {/* Completed outputs */}
       {task.status === 'COMPLETED' && task.executions?.[0]?.agentOutputs?.length > 0 && (
         <div className="space-y-3">
-          <p className="text-sm font-medium text-foreground">Результат</p>
+          <p className="text-sm font-medium text-foreground">{t('tasks.result')}</p>
           {task.executions?.[0].agentOutputs.map((o: any, i: number) => (
             <div key={i} className="rounded-lg border border-border bg-card p-4">
               <div className="mb-2 flex items-center gap-1.5">
@@ -204,7 +198,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
       {/* Failed */}
       {task.status === 'FAILED' && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-          Задача завершилась с ошибкой.
+          {t('tasks.failed')}
         </div>
       )}
     </div>
@@ -213,6 +207,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
 
 function TasksPageInner() {
   const { activeProject } = useProject()
+  const { t } = useLang()
   const searchParams = useSearchParams()
   const initialSelected = searchParams.get('selected')
 
@@ -262,7 +257,7 @@ function TasksPageInner() {
   }, [activeProject?.id, selectedId])
 
   const handleDelete = async (tid: string) => {
-    if (!activeProject || !confirm('Удалить задачу?')) return
+    if (!activeProject || !confirm(t('tasks.deleteConfirm'))) return
     await apiFetch(`/api/projects/${activeProject.id}/tasks/${tid}`, { method: 'DELETE' })
     setSelectedId(prev => prev === tid ? null : prev)
     fetchTasks()
@@ -271,8 +266,8 @@ function TasksPageInner() {
   if (!activeProject) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center">
-        <p className="text-sm text-muted-foreground">Проект не выбран.</p>
-        <a href="/dashboard" className="mt-2 text-sm font-medium text-foreground hover:underline">Выбрать проект</a>
+        <p className="text-sm text-muted-foreground">{t('tasks.noProjectMsg')}</p>
+        <a href="/dashboard" className="mt-2 text-sm font-medium text-foreground hover:underline">{t('tasks.selectProject')}</a>
       </div>
     )
   }
@@ -280,13 +275,13 @@ function TasksPageInner() {
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <h1 className="text-[22px] font-medium text-foreground">Задачи</h1>
+        <h1 className="text-[22px] font-medium text-foreground">{t('tasks.title')}</h1>
         <button
           type="button"
           onClick={() => setShowNew(true)}
           className="rounded-md bg-primary px-3 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 transition-opacity"
         >
-          + Новая задача
+          {t('tasks.newTask')}
         </button>
       </div>
 
@@ -314,7 +309,7 @@ function TasksPageInner() {
                       : 'border-border text-muted-foreground hover:border-primary/40 hover:text-foreground'
                   )}
                 >
-                  {STATUS_LABELS[s] ?? s}
+                  {t(`tasks.filters.${s}` as any)}
                 </button>
               ))}
             </div>
@@ -323,35 +318,35 @@ function TasksPageInner() {
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-[360px_1fr]">
             {/* Task list */}
             <div className="space-y-2">
-              {loading && <p className="text-sm text-muted-foreground">Загрузка...</p>}
+              {loading && <p className="text-sm text-muted-foreground">{t('common.loading')}</p>}
               {!loading && tasks.length === 0 && (
                 <div className="rounded-lg border border-dashed border-border p-8 text-center">
-                  <p className="text-sm text-muted-foreground">Нет задач</p>
+                  <p className="text-sm text-muted-foreground">{t('tasks.noTasks')}</p>
                 </div>
               )}
-              {!loading && tasks.map(t => (
-                <div key={t.id} className="group relative">
+              {!loading && tasks.map(task => (
+                <div key={task.id} className="group relative">
                   <button
-                    onClick={() => setSelectedId(t.id)}
+                    onClick={() => setSelectedId(task.id)}
                     className={cn(
                       'w-full rounded-lg border p-3.5 text-left transition-colors',
-                      selectedId === t.id
+                      selectedId === task.id
                         ? 'border-primary/50 bg-accent/40'
                         : 'border-border bg-card hover:border-primary/30 hover:bg-accent/20'
                     )}
                   >
                     <div className="mb-2 flex items-center gap-2">
-                      <StatusBadge status={t.status} />
+                      <StatusBadge status={task.status} />
                       <span className="ml-auto text-[11px] text-muted-foreground">
-                        {new Date(t.createdAt).toLocaleDateString('ru-RU')}
+                        {new Date(task.createdAt).toLocaleDateString('ru-RU')}
                       </span>
                     </div>
-                    <p className="line-clamp-2 text-sm text-foreground">{t.input}</p>
+                    <p className="line-clamp-2 text-sm text-foreground">{task.input}</p>
                   </button>
                   <button
-                    onClick={e => { e.stopPropagation(); handleDelete(t.id) }}
+                    onClick={e => { e.stopPropagation(); handleDelete(task.id) }}
                     className="absolute right-2.5 top-2.5 hidden h-6 w-6 items-center justify-center rounded-md border border-border bg-card text-muted-foreground hover:border-destructive/40 hover:text-destructive group-hover:flex transition-colors"
-                    title="Удалить"
+                    title={t('common.delete')}
                   >
                     <Trash2 size={12} />
                   </button>
@@ -368,7 +363,7 @@ function TasksPageInner() {
                       onClick={() => setSelectedId(null)}
                       className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                     >
-                      ✕ Закрыть
+                      {t('common.close')}
                     </button>
                   </div>
                   <TaskDetail
@@ -379,7 +374,7 @@ function TasksPageInner() {
                 </div>
               ) : (
                 <div className="flex min-h-[300px] items-center justify-center rounded-lg border border-dashed border-border">
-                  <p className="text-sm text-muted-foreground">Выберите задачу для просмотра</p>
+                  <p className="text-sm text-muted-foreground">{t('tasks.selectTask')}</p>
                 </div>
               )}
             </div>
@@ -393,7 +388,7 @@ function TasksPageInner() {
 export default function TasksPage() {
   return (
     <AppShell>
-      <Suspense fallback={<div className="py-8 text-sm text-muted-foreground">Загрузка...</div>}>
+      <Suspense fallback={<div className="py-8 text-sm text-muted-foreground">...</div>}>
         <TasksPageInner />
       </Suspense>
     </AppShell>

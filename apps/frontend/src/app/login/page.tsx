@@ -3,11 +3,13 @@ import { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/contexts/auth'
+import { useLang } from '@/contexts/lang'
 
 function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { login } = useAuth()
+  const { t } = useLang()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
@@ -22,7 +24,7 @@ function LoginForm() {
       const returnTo = searchParams.get('returnTo')
       router.push(returnTo && returnTo.startsWith('/') ? returnTo : '/dashboard')
     } catch (err: any) {
-      setError(err.message ?? 'Ошибка входа')
+      setError(err.message ?? t('auth.login.error'))
     } finally {
       setLoading(false)
     }
@@ -34,8 +36,8 @@ function LoginForm() {
         <div className="mb-4 flex h-11 w-11 items-center justify-center rounded-2xl bg-primary text-sm font-semibold text-primary-foreground shadow-sm">
           AI
         </div>
-        <h2 className="text-[30px] font-semibold tracking-[-0.03em] text-foreground">Войти в платформу</h2>
-        <p className="mt-2 text-sm leading-6 text-muted-foreground">Продолжите работу с проектами, задачами и контентом команды.</p>
+        <h2 className="text-[30px] font-semibold tracking-[-0.03em] text-foreground">{t('auth.login.title')}</h2>
+        <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('auth.login.subtitle')}</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
@@ -51,7 +53,7 @@ function LoginForm() {
           />
         </div>
         <div className="space-y-1.5">
-          <label className="text-sm font-medium text-foreground">Пароль</label>
+          <label className="text-sm font-medium text-foreground">{t('auth.login.password')}</label>
           <input
             type="password"
             value={password}
@@ -66,14 +68,14 @@ function LoginForm() {
           disabled={loading}
           className="w-full rounded-2xl bg-primary px-4 py-3 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
         >
-          {loading ? 'Вход...' : 'Войти'}
+          {loading ? t('auth.login.submitting') : t('auth.login.submit')}
         </button>
       </form>
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
-        Нет аккаунта?{' '}
+        {t('auth.login.noAccount')}{' '}
         <Link href="/register" className="font-medium text-foreground hover:underline">
-          Зарегистрироваться
+          {t('auth.login.register')}
         </Link>
       </p>
     </div>
@@ -81,6 +83,8 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
+  const { t } = useLang()
+
   return (
     <div className="relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-10 sm:px-6">
       <div className="hero-orb left-[-80px] top-[8%] h-[220px] w-[220px] bg-[#F4BA96]" />
@@ -92,24 +96,20 @@ export default function LoginPage() {
           <div className="relative">
             <div className="inline-flex items-center gap-3 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-xs uppercase tracking-[0.28em] text-white/85">
               <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#17304c] font-bold">AI</span>
-              Marketing Studio
+              {t('auth.hero.tag')}
             </div>
 
             <h1 className="mt-10 max-w-md text-5xl font-semibold leading-[1.05] tracking-[-0.04em]">
-              Контент, задачи и согласование в одной рабочей системе.
+              {t('auth.hero.title')}
             </h1>
             <p className="mt-5 max-w-md text-base leading-7 text-white/78">
-              Управляйте маркетинговым продакшеном, запускайте AI-задачи и держите под рукой календарь, библиотеку и проектный контекст.
+              {t('auth.hero.subtitle')}
             </p>
 
             <div className="mt-10 grid gap-3">
-              {[
-                'Единый контур задач, материалов и ревью',
-                'AI-исполнители с понятными статусами',
-                'Рабочий ритм команды без ручного хаоса',
-              ].map((item) => (
-                <div key={item} className="rounded-2xl border border-white/14 bg-white/10 px-4 py-3 text-sm text-white/86 backdrop-blur-sm">
-                  {item}
+              {(['auth.hero.feature1', 'auth.hero.feature2', 'auth.hero.feature3'] as const).map((key) => (
+                <div key={key} className="rounded-2xl border border-white/14 bg-white/10 px-4 py-3 text-sm text-white/86 backdrop-blur-sm">
+                  {t(key)}
                 </div>
               ))}
             </div>

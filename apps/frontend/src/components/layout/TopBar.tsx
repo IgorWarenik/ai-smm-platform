@@ -2,22 +2,24 @@
 import { usePathname, useRouter } from 'next/navigation'
 import { Moon, Sun, LogOut, ChevronRight } from 'lucide-react'
 import { useAuth } from '@/contexts/auth'
+import { useLang } from '@/contexts/lang'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
 
-const ROUTE_LABELS: Record<string, string> = {
-  dashboard: 'Главная',
-  new: 'Новый запрос',
-  tasks: 'Задачи',
-  calendar: 'Календарь',
-  library: 'Библиотека',
-  project: 'Проект',
-  knowledge: 'База знаний',
-  settings: 'Настройки',
+const ROUTE_KEYS: Record<string, string> = {
+  dashboard: 'nav.home',
+  new: 'nav.new',
+  tasks: 'nav.tasks',
+  calendar: 'nav.calendar',
+  library: 'nav.library',
+  project: 'nav.project',
+  knowledge: 'nav.knowledge',
+  settings: 'nav.settings',
 }
 
 function Breadcrumbs() {
   const pathname = usePathname()
+  const { t } = useLang()
   const parts = pathname.split('/').filter(Boolean)
 
   if (parts.length === 0) return null
@@ -26,7 +28,8 @@ function Breadcrumbs() {
     <nav className="flex items-center gap-1 text-sm text-muted-foreground">
       {parts.map((part, i) => {
         const isLast = i === parts.length - 1
-        const label = ROUTE_LABELS[part] ?? part
+        const key = ROUTE_KEYS[part]
+        const label = key ? t(key as any) : part
         return (
           <span key={i} className="flex items-center gap-1">
             {i > 0 && <ChevronRight size={14} className="text-border" />}
@@ -40,6 +43,7 @@ function Breadcrumbs() {
 
 export default function TopBar() {
   const { user, logout } = useAuth()
+  const { lang, setLang, t } = useLang()
   const router = useRouter()
   const [dark, setDark] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -50,7 +54,6 @@ export default function TopBar() {
     const isDark = stored === 'dark' || (!stored && prefersDark)
     setDark(isDark)
     document.documentElement.classList.toggle('dark', isDark)
-    // Sync to cookie so server can render correct theme on next load
     if (!document.cookie.includes('theme=')) {
       document.cookie = `theme=${isDark ? 'dark' : 'light'}; path=/; max-age=31536000; SameSite=Lax`
     }
@@ -77,10 +80,36 @@ export default function TopBar() {
       </div>
 
       <div className="flex items-center gap-2">
+        {/* Language switcher */}
+        <div className="flex items-center rounded-2xl border border-border overflow-hidden text-xs font-medium">
+          <button
+            onClick={() => setLang('ru')}
+            className={cn(
+              'px-2.5 py-1.5 transition-colors',
+              lang === 'ru'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/60'
+            )}
+          >
+            RU
+          </button>
+          <button
+            onClick={() => setLang('en')}
+            className={cn(
+              'px-2.5 py-1.5 transition-colors',
+              lang === 'en'
+                ? 'bg-primary text-primary-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/60'
+            )}
+          >
+            EN
+          </button>
+        </div>
+
         <button
           onClick={toggleTheme}
           className="flex h-10 w-10 items-center justify-center rounded-2xl text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          title={dark ? 'Светлая тема' : 'Тёмная тема'}
+          title={dark ? t('topbar.lightTheme') : t('topbar.darkTheme')}
         >
           {dark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
@@ -105,7 +134,7 @@ export default function TopBar() {
                   className="flex w-full items-center gap-2 px-3 py-2 text-sm text-destructive hover:bg-accent/50 transition-colors"
                 >
                   <LogOut size={14} />
-                  Выйти
+                  {t('topbar.logout')}
                 </button>
               </div>
             </>

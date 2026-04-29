@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import './globals.css'
 import { AuthProvider } from '@/contexts/auth'
 import { ProjectProvider } from '@/contexts/project'
+import { LangProvider } from '@/contexts/lang'
 
 const manrope = Manrope({ subsets: ['latin', 'cyrillic'], weight: ['400', '500', '600', '700'] })
 
@@ -31,11 +32,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script dangerouslySetInnerHTML={{ __html: `(function(){try{var s=localStorage.getItem('theme'),d=window.matchMedia('(prefers-color-scheme: dark)').matches,dark=s==='dark'||(s===null&&d);document.documentElement.classList.toggle('dark',dark);document.documentElement.style.backgroundColor=dark?'${DARK_BG}':'${LIGHT_BG}';if(!document.cookie.includes('theme='))document.cookie='theme='+(dark?'dark':'light')+';path=/;max-age=31536000;SameSite=Lax';}catch(e){}})();` }} />
       </head>
       <body className={manrope.className}>
-        <AuthProvider>
-          <ProjectProvider>
-            {children}
-          </ProjectProvider>
-        </AuthProvider>
+        <LangProvider>
+          <AuthProvider>
+            <ProjectProvider>
+              {children}
+            </ProjectProvider>
+          </AuthProvider>
+        </LangProvider>
       </body>
     </html>
   )
