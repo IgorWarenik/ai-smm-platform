@@ -1,6 +1,8 @@
 'use client'
 
 import AgentAvatar from '@/components/AgentAvatar'
+import { useLang } from '@/contexts/lang'
+import type { TranslationKey } from '@/lib/i18n'
 import { cn } from '@/lib/utils'
 
 export type AgentScenario = 'A' | 'B' | 'C' | 'D'
@@ -8,49 +10,49 @@ export type ScenarioAgent = 'MARKETER' | 'CONTENT_MAKER' | 'EVALUATOR'
 
 type ScenarioStep = {
   agent: ScenarioAgent
-  title: string
-  action: string
-  handoff?: string
+  titleKey: TranslationKey
+  actionKey: TranslationKey
+  handoffKey?: TranslationKey
 }
 
 const SCENARIOS: Record<AgentScenario, {
-  title: string
-  description: string
+  titleKey: TranslationKey
+  descriptionKey: TranslationKey
   steps: ScenarioStep[]
-  footer?: string
+  footerKey?: TranslationKey
 }> = {
   A: {
-    title: 'Сценарий A',
-    description: 'Один агент делает один понятный deliverable.',
+    titleKey: 'agentScenario.A.title',
+    descriptionKey: 'agentScenario.A.description',
     steps: [
-      { agent: 'CONTENT_MAKER', title: 'Контент-мейкер', action: 'готовит материал' },
+      { agent: 'CONTENT_MAKER', titleKey: 'agentScenario.A.s0.title', actionKey: 'agentScenario.A.s0.action' },
     ],
   },
   B: {
-    title: 'Сценарий B',
-    description: 'Сначала стратегия, потом производство контента.',
+    titleKey: 'agentScenario.B.title',
+    descriptionKey: 'agentScenario.B.description',
     steps: [
-      { agent: 'MARKETER', title: 'Маркетолог', action: 'собирает стратегию', handoff: 'бриф' },
-      { agent: 'CONTENT_MAKER', title: 'Контент-мейкер', action: 'делает материал' },
+      { agent: 'MARKETER', titleKey: 'agentScenario.B.s0.title', actionKey: 'agentScenario.B.s0.action', handoffKey: 'agentScenario.B.s0.handoff' },
+      { agent: 'CONTENT_MAKER', titleKey: 'agentScenario.B.s1.title', actionKey: 'agentScenario.B.s1.action' },
     ],
   },
   C: {
-    title: 'Сценарий C',
-    description: 'Агенты работают параллельно, результаты объединяются.',
+    titleKey: 'agentScenario.C.title',
+    descriptionKey: 'agentScenario.C.description',
     steps: [
-      { agent: 'MARKETER', title: 'Маркетолог', action: 'ищет стратегические выводы', handoff: 'параллельно' },
-      { agent: 'CONTENT_MAKER', title: 'Контент-мейкер', action: 'готовит контентную часть' },
+      { agent: 'MARKETER', titleKey: 'agentScenario.C.s0.title', actionKey: 'agentScenario.C.s0.action', handoffKey: 'agentScenario.C.s0.handoff' },
+      { agent: 'CONTENT_MAKER', titleKey: 'agentScenario.C.s1.title', actionKey: 'agentScenario.C.s1.action' },
     ],
   },
   D: {
-    title: 'Сценарий D',
-    description: 'Стратегия, контент, оценка и до 3 итераций правок.',
+    titleKey: 'agentScenario.D.title',
+    descriptionKey: 'agentScenario.D.description',
     steps: [
-      { agent: 'MARKETER', title: 'Маркетолог', action: 'собирает стратегию', handoff: 'бриф' },
-      { agent: 'CONTENT_MAKER', title: 'Контент-мейкер', action: 'делает черновик', handoff: 'черновик' },
-      { agent: 'EVALUATOR', title: 'Оценщик', action: 'проверяет и возвращает правки' },
+      { agent: 'MARKETER', titleKey: 'agentScenario.D.s0.title', actionKey: 'agentScenario.D.s0.action', handoffKey: 'agentScenario.D.s0.handoff' },
+      { agent: 'CONTENT_MAKER', titleKey: 'agentScenario.D.s1.title', actionKey: 'agentScenario.D.s1.action', handoffKey: 'agentScenario.D.s1.handoff' },
+      { agent: 'EVALUATOR', titleKey: 'agentScenario.D.s2.title', actionKey: 'agentScenario.D.s2.action' },
     ],
-    footer: 'Если оценка слабая, правки возвращаются контент-мейкеру.',
+    footerKey: 'agentScenario.D.footer',
   },
 }
 
@@ -62,9 +64,9 @@ export function normalizeScenario(value?: string | null): AgentScenario {
 
 export function estimateScenario(taskType: string, text = ''): AgentScenario {
   const normalized = `${taskType} ${text}`.toLowerCase()
-  if (/(проверь|оцени|оценк|итерац|доработ|улучш|ревиз)/i.test(normalized)) return 'D'
-  if (/(анализ ца|анализ конкурентов|конкурент|исследован|сравни)/i.test(normalized)) return 'C'
-  if (/(стратег|кампан|медиаплан|контент-план|запуск)/i.test(normalized)) return 'B'
+  if (/(проверь|оцени|оценк|итерац|доработ|улучш|ревиз|review|evaluate|revise|improve|iteration)/i.test(normalized)) return 'D'
+  if (/(анализ ца|анализ конкурентов|конкурент|исследован|сравни|audience analysis|competitor|research|compare)/i.test(normalized)) return 'C'
+  if (/(стратег|кампан|медиаплан|контент-план|запуск|strategy|campaign|media plan|content plan|launch)/i.test(normalized)) return 'B'
   return 'A'
 }
 
@@ -82,9 +84,10 @@ export default function AgentScenarioFlow({
   activeAgent,
   running = false,
   compact = false,
-  title = 'Агентный сценарий',
+  title,
   className,
 }: Props) {
+  const { t } = useLang()
   const scenarioKey = normalizeScenario(scenario)
   const config = SCENARIOS[scenarioKey]
   const safeActiveAgent = activeAgent === 'MARKETER' || activeAgent === 'CONTENT_MAKER' || activeAgent === 'EVALUATOR'
@@ -95,19 +98,19 @@ export default function AgentScenarioFlow({
     <section className={cn('rounded-lg border border-border bg-card p-4', className)}>
       <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
-          <h2 className="mt-1 text-sm font-medium text-foreground">{config.title}</h2>
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title ?? t('agentScenario.title')}</p>
+          <h2 className="mt-1 text-sm font-medium text-foreground">{t(config.titleKey)}</h2>
         </div>
         {running && (
           <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700">
             <span className="h-1.5 w-1.5 rounded-full bg-blue-500 animate-pulse" />
-            live
+            {t('agentScenario.live')}
           </span>
         )}
       </div>
 
       {!compact && (
-        <p className="mb-4 text-sm leading-relaxed text-muted-foreground">{config.description}</p>
+        <p className="mb-4 text-sm leading-relaxed text-muted-foreground">{t(config.descriptionKey)}</p>
       )}
 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-stretch">
@@ -131,8 +134,8 @@ export default function AgentScenarioFlow({
                 )}
                 <AgentAvatar type={step.agent} size={compact ? 26 : 30} />
                 <div className="min-w-0">
-                  <p className="text-sm font-medium text-foreground">{step.title}</p>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{step.action}</p>
+                  <p className="text-sm font-medium text-foreground">{t(step.titleKey)}</p>
+                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{t(step.actionKey)}</p>
                 </div>
               </div>
 
@@ -140,7 +143,7 @@ export default function AgentScenarioFlow({
                 <div className="flex items-center justify-center py-1 sm:px-2 sm:py-0">
                   <div className="flex items-center gap-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                     <span className={cn('h-px w-7 bg-border', running && 'bg-blue-300')} />
-                    <span className="whitespace-nowrap">{step.handoff ?? 'handoff'}</span>
+                    <span className="whitespace-nowrap">{step.handoffKey ? t(step.handoffKey) : t('agentScenario.handoff')}</span>
                     <span className={cn('h-px w-7 bg-border', running && 'bg-blue-300')} />
                   </div>
                 </div>
@@ -150,8 +153,8 @@ export default function AgentScenarioFlow({
         })}
       </div>
 
-      {config.footer && !compact && (
-        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{config.footer}</p>
+      {config.footerKey && !compact && (
+        <p className="mt-3 text-xs leading-relaxed text-muted-foreground">{t(config.footerKey)}</p>
       )}
     </section>
   )

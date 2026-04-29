@@ -1089,3 +1089,46 @@ _See AGENT_BRIEF_CODEX.md and AGENT_BRIEF_GEMINI.md_
 **Note:**
 - Per user instruction, removed this task report from `WORKPLAN.md`.
 - Future Codex reports should go to `AGENTS_CHAT.md`, not `WORKPLAN.md`.
+
+## Frontend i18n Fix → Codex — 2026-04-29
+
+**Task:** finish Claude's UI language toggle so frontend headings and labels switch according to RU/EN toggle.
+
+**What changed:**
+- Completed missing translation keys in `apps/frontend/src/lib/i18n.ts`.
+- Wired remaining hardcoded UI labels to `useLang()`: file upload/dropzone, multimodal input, task quality score, agent scenario flow, agent names, knowledge categories, member roles, redirects, settings latency unit.
+- Switched date formatting on dashboard/tasks to current language locale.
+- `LangProvider` now updates `<html lang>` when toggle changes.
+- Left internal Russian constants used as task type values / search heuristics where they are not directly rendered as UI labels.
+
+**Validation:**
+- `npx tsc --noEmit -p apps/frontend/tsconfig.json` — pass
+- `git diff --check -- apps/frontend/src` — pass
+- `docker compose build frontend` — pass
+- `docker compose up -d frontend` — pass
+- `curl -I http://localhost:3002/login` — 200 OK
+
+**Note:**
+- `WORKPLAN.md` was not edited.
+
+## Frontend i18n Flicker Fix → Codex — 2026-04-29
+
+**Bug:** when the language toggle was set to English, page refresh briefly rendered Russian before switching back to English.
+
+**Root cause:** `LangProvider` always initialized client state as `ru`, then read `localStorage` after hydration. The server also had no language cookie, so SSR could not render the selected language.
+
+**Fix:**
+- `LangProvider` now accepts `initialLang`.
+- `app/layout.tsx` reads `lang` cookie and passes it to `LangProvider`.
+- language toggle writes both `localStorage` and `lang` cookie.
+- `<html lang>` is rendered from the same initial language.
+
+**Validation:**
+- `npx tsc --noEmit -p apps/frontend/tsconfig.json` — pass
+- `docker compose build frontend` — pass
+- `docker compose up -d frontend` — pass
+- `curl -H 'Cookie: lang=en' http://localhost:3002/login` returns `<html lang="en"` and `Sign in to the platform`
+- `curl -H 'Cookie: lang=ru' http://localhost:3002/login` returns `<html lang="ru"` and `Войти в платформу`
+
+**Note:**
+- `WORKPLAN.md` was not edited.

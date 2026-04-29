@@ -2,16 +2,10 @@
 import { useEffect, useState } from 'react'
 import { apiFetch } from '@/lib/api'
 import { useProject } from '@/contexts/project'
+import { useLang } from '@/contexts/lang'
 import AppShell from '@/components/layout/AppShell'
 import { ChevronDown, ChevronRight, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-
-const TOV_OPTIONS = [
-  { value: 'OFFICIAL', label: 'Официальный' },
-  { value: 'FRIENDLY', label: 'Дружеский' },
-  { value: 'EXPERT', label: 'Экспертный' },
-  { value: 'PROVOCATIVE', label: 'Провокационный' },
-]
 
 type Profile = {
   companyName?: string; description?: string; niche?: string; geography?: string
@@ -215,25 +209,6 @@ function normalizeProfile(data: ApiProfile): Profile {
   }
 }
 
-const TIER1 = [
-  { field: 'companyName', label: 'Название компании', required: true },
-  { field: 'description', label: 'Описание', required: true, textarea: true },
-  { field: 'niche', label: 'Ниша', required: true },
-  { field: 'geography', label: 'География' },
-  { field: 'products', label: 'Продукты / Услуги', textarea: true },
-  { field: 'audience', label: 'Целевая аудитория', textarea: true },
-] as const
-
-const TIER2 = [
-  { field: 'usp', label: 'УТП (уникальное торговое предложение)', textarea: true },
-  { field: 'competitors', label: 'Конкуренты', textarea: true },
-] as const
-
-const TIER3 = [
-  { field: 'websiteUrl', label: 'Сайт' },
-  { field: 'socialLinks', label: 'Соцсети (ссылки)' },
-] as const
-
 function calcTierPct(profile: Profile | null, fields: readonly { field: string }[]): number {
   if (!profile) return 0
   const filled = fields.filter(f => {
@@ -275,7 +250,7 @@ function TierAccordion({ title, pct, children, defaultOpen }: TierProps) {
   )
 }
 
-function FieldView({ label, value, onEdit }: { label: string; value?: unknown; onEdit: () => void }) {
+function FieldView({ label, value, hint, onEdit }: { label: string; value?: unknown; hint: string; onEdit: () => void }) {
   const display = Array.isArray(value)
     ? value.join(', ')
     : typeof value === 'string'
@@ -290,7 +265,7 @@ function FieldView({ label, value, onEdit }: { label: string; value?: unknown; o
     >
       <p className="text-xs font-medium text-muted-foreground">{label}</p>
       <p className={cn('mt-0.5 whitespace-pre-wrap text-sm', display ? 'text-foreground' : 'text-muted-foreground/60 italic')}>
-        {display || 'Нажмите для заполнения'}
+        {display || hint}
       </p>
     </div>
   )
@@ -298,6 +273,7 @@ function FieldView({ label, value, onEdit }: { label: string; value?: unknown; o
 
 function ProfilePageInner() {
   const { activeProject, setActiveProject } = useProject()
+  const { t } = useLang()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [editField, setEditField] = useState<string | null>(null)
@@ -311,6 +287,32 @@ function ProfilePageInner() {
   const [saving, setSaving] = useState(false)
   const [success, setSuccess] = useState('')
   const [error, setError] = useState('')
+
+  const TIER1 = [
+    { field: 'companyName', label: t('profile.field.companyName'), required: true },
+    { field: 'description', label: t('profile.field.description'), required: true, textarea: true },
+    { field: 'niche', label: t('profile.field.niche'), required: true },
+    { field: 'geography', label: t('profile.field.geography') },
+    { field: 'products', label: t('profile.field.products'), textarea: true },
+    { field: 'audience', label: t('profile.field.audience'), textarea: true },
+  ] as const
+
+  const TIER2 = [
+    { field: 'usp', label: t('profile.field.usp'), textarea: true },
+    { field: 'competitors', label: t('profile.field.competitors'), textarea: true },
+  ] as const
+
+  const TIER3 = [
+    { field: 'websiteUrl', label: t('profile.field.websiteUrl') },
+    { field: 'socialLinks', label: t('profile.field.socialLinks') },
+  ] as const
+
+  const TOV_OPTIONS = [
+    { value: 'OFFICIAL', label: t('profile.tov.OFFICIAL') },
+    { value: 'FRIENDLY', label: t('profile.tov.FRIENDLY') },
+    { value: 'EXPERT', label: t('profile.tov.EXPERT') },
+    { value: 'PROVOCATIVE', label: t('profile.tov.PROVOCATIVE') },
+  ]
 
   useEffect(() => {
     if (!activeProject) return
@@ -355,10 +357,10 @@ function ProfilePageInner() {
       })
       setProfile(normalizeProfile(data))
       setEditField(null)
-      setSuccess('Сохранено')
+      setSuccess(t('profile.savedSuccess'))
       setTimeout(() => setSuccess(''), 2000)
     } catch (err: any) {
-      setError(err?.message ?? 'Не удалось сохранить поле')
+      setError(err?.message ?? t('profile.saveError'))
     } finally { setSaving(false) }
   }
 
@@ -366,7 +368,7 @@ function ProfilePageInner() {
     if (!activeProject) return
     const nextName = projectName.trim()
     if (!nextName) {
-      setError('Название проекта не может быть пустым')
+      setError(t('profile.nameEmpty'))
       return
     }
 
@@ -384,15 +386,14 @@ function ProfilePageInner() {
       })
       setProjectName(data.name)
       setRenaming(false)
-      setSuccess('Название обновлено')
+      setSuccess(t('profile.nameUpdated'))
       setTimeout(() => setSuccess(''), 2000)
     } catch (err: any) {
-      setError(err?.message ?? 'Не удалось обновить название проекта')
+      setError(err?.message ?? t('profile.renameError'))
     } finally {
       setRenameLoading(false)
     }
   }
-
 
   const renderEditField = (field: string, label: string, textarea?: boolean) => {
     if (editField !== field) return null
@@ -418,11 +419,11 @@ function ProfilePageInner() {
         <div className="flex gap-2">
           <button onClick={save} disabled={saving}
             className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-            {saving ? 'Сохранение...' : 'Сохранить'}
+            {saving ? t('common.saving') : t('common.save')}
           </button>
           <button onClick={() => setEditField(null)}
             className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-            Отмена
+            {t('common.cancel')}
           </button>
         </div>
       </div>
@@ -432,7 +433,7 @@ function ProfilePageInner() {
   if (!activeProject) {
     return (
       <div className="py-10 text-center text-sm text-muted-foreground">
-        <a href="/dashboard" className="hover:underline">Выберите проект</a>
+        <a href="/dashboard" className="hover:underline">{t('profile.noProject')}</a>
       </div>
     )
   }
@@ -440,13 +441,14 @@ function ProfilePageInner() {
   const t1pct = calcTierPct(profile, TIER1)
   const t2pct = calcTierPct(profile, TIER2)
   const t3pct = calcTierPct(profile, TIER3)
+  const clickHint = t('profile.clickToFill')
 
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">Управление проектом</p>
-          <h1 className="mt-1 text-[22px] font-medium text-foreground">Профиль проекта</h1>
+          <p className="text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">{t('profile.tag')}</p>
+          <h1 className="mt-1 text-[22px] font-medium text-foreground">{t('profile.title')}</h1>
         </div>
         <div className="flex items-center gap-3">
           {success && (
@@ -460,7 +462,7 @@ function ProfilePageInner() {
       <div className="rounded-lg border border-border bg-card p-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Название проекта</p>
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{t('profile.projectNameLabel')}</p>
             {renaming ? (
               <div className="mt-2 max-w-xl space-y-3">
                 <input
@@ -476,7 +478,7 @@ function ProfilePageInner() {
                     disabled={renameLoading}
                     className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
                   >
-                    {renameLoading ? 'Сохранение...' : 'Сохранить'}
+                    {renameLoading ? t('common.saving') : t('common.save')}
                   </button>
                   <button
                     onClick={() => {
@@ -485,7 +487,7 @@ function ProfilePageInner() {
                     }}
                     className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground"
                   >
-                    Отмена
+                    {t('common.cancel')}
                   </button>
                 </div>
               </div>
@@ -499,7 +501,7 @@ function ProfilePageInner() {
                   }}
                   className="mt-3 rounded-md border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
                 >
-                  Изменить название
+                  {t('profile.rename')}
                 </button>
               </>
             )}
@@ -520,7 +522,7 @@ function ProfilePageInner() {
       ) : (
         <div className="space-y-3">
           {/* Tier 1 */}
-          <TierAccordion title="Tier 1 — Базовый профиль" pct={t1pct} defaultOpen>
+          <TierAccordion title={t('profile.tier1')} pct={t1pct} defaultOpen>
             <div className="divide-y divide-border">
               {TIER1.map(f => (
                 <div key={f.field}>
@@ -533,6 +535,7 @@ function ProfilePageInner() {
                     <FieldView
                       label={f.label}
                       value={(profile as any)?.[f.field]}
+                      hint={clickHint}
                       onEdit={() => startEdit(f.field)}
                     />
                   )}
@@ -542,7 +545,7 @@ function ProfilePageInner() {
           </TierAccordion>
 
           {/* Tier 2 */}
-          <TierAccordion title="Tier 2 — Позиционирование" pct={t2pct}>
+          <TierAccordion title={t('profile.tier2')} pct={t2pct}>
             <div className="divide-y divide-border">
               {TIER2.map(f => (
                 <div key={f.field}>
@@ -552,7 +555,7 @@ function ProfilePageInner() {
                       {renderEditField(f.field, f.label, (f as any).textarea)}
                     </div>
                   ) : (
-                    <FieldView label={f.label} value={(profile as any)?.[f.field]} onEdit={() => startEdit(f.field)} />
+                    <FieldView label={f.label} value={(profile as any)?.[f.field]} hint={clickHint} onEdit={() => startEdit(f.field)} />
                   )}
                 </div>
               ))}
@@ -561,7 +564,7 @@ function ProfilePageInner() {
               <div>
                 {editField === 'tov' ? (
                   <div className="py-2.5">
-                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">Тон коммуникации</p>
+                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">{t('profile.tov')}</p>
                     <div className="flex flex-wrap gap-1.5 mb-3">
                       {TOV_OPTIONS.map(o => (
                         <button
@@ -582,18 +585,19 @@ function ProfilePageInner() {
                     <div className="flex gap-2">
                       <button onClick={save} disabled={saving}
                         className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                        {saving ? 'Сохранение...' : 'Сохранить'}
+                        {saving ? t('common.saving') : t('common.save')}
                       </button>
                       <button onClick={() => setEditField(null)}
                         className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-                        Отмена
+                        {t('common.cancel')}
                       </button>
                     </div>
                   </div>
                 ) : (
                   <FieldView
-                    label="Тон коммуникации"
+                    label={t('profile.tov')}
                     value={TOV_OPTIONS.find(o => o.value === profile?.tov)?.label ?? profile?.tov}
+                    hint={clickHint}
                     onEdit={() => { setEditVal(profile?.tov ?? 'FRIENDLY'); setEditField('tov') }}
                   />
                 )}
@@ -603,7 +607,7 @@ function ProfilePageInner() {
               <div>
                 {editField === 'keywords' ? (
                   <div className="py-2.5">
-                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">Ключевые слова (через запятую)</p>
+                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">{t('profile.keywords')}</p>
                     <input
                       type="text"
                       value={keywordsText}
@@ -614,16 +618,16 @@ function ProfilePageInner() {
                     <div className="mt-2 flex gap-2">
                       <button onClick={save} disabled={saving}
                         className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                        {saving ? 'Сохранение...' : 'Сохранить'}
+                        {saving ? t('common.saving') : t('common.save')}
                       </button>
                       <button onClick={() => setEditField(null)}
                         className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-                        Отмена
+                        {t('common.cancel')}
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <FieldView label="Ключевые слова" value={profile?.keywords} onEdit={() => startEdit('keywords')} />
+                  <FieldView label={t('profile.keywordsLabel')} value={profile?.keywords} hint={clickHint} onEdit={() => startEdit('keywords')} />
                 )}
               </div>
 
@@ -631,7 +635,7 @@ function ProfilePageInner() {
               <div>
                 {editField === 'forbidden' ? (
                   <div className="py-2.5">
-                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">Запрещённые слова (через запятую)</p>
+                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">{t('profile.forbidden')}</p>
                     <input
                       type="text"
                       value={forbiddenText}
@@ -642,23 +646,23 @@ function ProfilePageInner() {
                     <div className="mt-2 flex gap-2">
                       <button onClick={save} disabled={saving}
                         className="rounded-md bg-primary px-3 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                        {saving ? 'Сохранение...' : 'Сохранить'}
+                        {saving ? t('common.saving') : t('common.save')}
                       </button>
                       <button onClick={() => setEditField(null)}
                         className="rounded-md border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-                        Отмена
+                        {t('common.cancel')}
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <FieldView label="Запрещённые слова" value={profile?.forbidden} onEdit={() => startEdit('forbidden')} />
+                  <FieldView label={t('profile.forbiddenLabel')} value={profile?.forbidden} hint={clickHint} onEdit={() => startEdit('forbidden')} />
                 )}
               </div>
             </div>
           </TierAccordion>
 
           {/* Tier 3 */}
-          <TierAccordion title="Tier 3 — Расширенный профиль" pct={t3pct}>
+          <TierAccordion title={t('profile.tier3')} pct={t3pct}>
             <div className="divide-y divide-border">
               {TIER3.map(f => (
                 <div key={f.field}>
@@ -668,7 +672,7 @@ function ProfilePageInner() {
                       {renderEditField(f.field, f.label, (f as any).textarea)}
                     </div>
                   ) : (
-                    <FieldView label={f.label} value={(profile as any)?.[f.field]} onEdit={() => startEdit(f.field)} />
+                    <FieldView label={f.label} value={(profile as any)?.[f.field]} hint={clickHint} onEdit={() => startEdit(f.field)} />
                   )}
                 </div>
               ))}

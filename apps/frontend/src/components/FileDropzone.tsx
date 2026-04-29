@@ -3,6 +3,7 @@ import { useCallback, useState } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { UploadCloud, X, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { useLang } from '@/contexts/lang'
 
 type Props = {
   onFiles: (files: File[]) => void
@@ -24,6 +25,7 @@ export default function FileDropzone({
   multiple = true,
   className,
 }: Props) {
+  const { t } = useLang()
   const [rejected, setRejected] = useState<string[]>([])
 
   const onDrop = useCallback((accepted: File[], rejected_: { file: File; errors: readonly { message: string }[] }[]) => {
@@ -52,12 +54,12 @@ export default function FileDropzone({
         <input {...getInputProps()} />
         <UploadCloud size={32} className="mb-3 text-muted-foreground" />
         {isDragActive ? (
-          <p className="text-sm font-medium text-foreground">Отпустите файл здесь</p>
+          <p className="text-sm font-medium text-foreground">{t('fileDropzone.dropHere')}</p>
         ) : (
           <>
-            <p className="text-sm font-medium text-foreground">Перетащите файл или нажмите для выбора</p>
+            <p className="text-sm font-medium text-foreground">{t('fileDropzone.pick')}</p>
             <p className="mt-1 text-xs text-muted-foreground">
-              PDF, DOCX, TXT, MD, PNG, JPG, XLSX · до {maxSizeMB} МБ
+              PDF, DOCX, TXT, MD, PNG, JPG, XLSX · {t('fileDropzone.maxSize').replace('{size}', String(maxSizeMB))}
             </p>
           </>
         )}

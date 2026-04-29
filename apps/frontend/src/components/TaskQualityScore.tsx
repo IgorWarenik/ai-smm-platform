@@ -1,12 +1,14 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { cn } from '@/lib/utils'
+import { useLang } from '@/contexts/lang'
+import type { TranslationKey } from '@/lib/i18n'
 
 type Criterion = {
-  label: string
+  labelKey: TranslationKey
   score: number
   max: number
-  hint?: string
+  hintKey?: TranslationKey
 }
 
 type ScoreResult = {
@@ -16,10 +18,10 @@ type ScoreResult = {
   verdict: 'accept' | 'clarify' | 'reject'
 }
 
-const PLATFORM_KEYWORDS = ['instagram', 'tiktok', 'telegram', 'vk', 'youtube', 'linkedin', 'x', 'pinterest', 'соцсет', 'платформ']
-const TYPE_KEYWORDS = ['пост', 'карусель', 'историй', 'reels', 'стратеги', 'контент-план', 'контентплан', 'рекламу', 'копи', 'текст']
-const AUDIENCE_KEYWORDS = ['аудитори', 'покупател', 'клиент', 'целевой', 'сегмент', 'возраст', 'пол', 'b2b', 'b2c']
-const METRIC_KEYWORDS = ['охват', 'конверси', 'подписчик', 'лиды', 'продажи', 'клик', 'просмотр', 'заказ']
+const PLATFORM_KEYWORDS = ['instagram', 'tiktok', 'telegram', 'vk', 'youtube', 'linkedin', 'x', 'pinterest', 'соцсет', 'платформ', 'platform', 'channel']
+const TYPE_KEYWORDS = ['пост', 'карусель', 'историй', 'reels', 'стратеги', 'контент-план', 'контентплан', 'рекламу', 'копи', 'текст', 'post', 'carousel', 'stories', 'strategy', 'content', 'copy', 'ad']
+const AUDIENCE_KEYWORDS = ['аудитори', 'покупател', 'клиент', 'целевой', 'сегмент', 'возраст', 'пол', 'b2b', 'b2c', 'audience', 'customer', 'client', 'segment']
+const METRIC_KEYWORDS = ['охват', 'конверси', 'подписчик', 'лиды', 'продажи', 'клик', 'просмотр', 'заказ', 'reach', 'conversion', 'leads', 'sales', 'click', 'views']
 
 function calcScore(text: string): ScoreResult {
   const lower = text.toLowerCase()
@@ -58,11 +60,11 @@ function calcScore(text: string): ScoreResult {
     max,
     verdict,
     criteria: [
-      { label: 'Ясность цели', score: clarityScore, max: 10, hint: clarityScore < 6 ? 'Добавьте конкретную цель задачи' : undefined },
-      { label: 'Полнота контекста', score: contextScore, max: 10, hint: contextScore < 6 ? 'Укажите платформу и тип контента' : undefined },
-      { label: 'Определённость ЦА', score: audienceScore, max: 10, hint: audienceScore < 6 ? 'Опишите целевую аудиторию' : undefined },
-      { label: 'Технические требования', score: techScore, max: 10, hint: techScore < 5 ? 'Укажите формат, тон, объём' : undefined },
-      { label: 'Критерии успеха', score: successScore, max: 10, hint: successScore < 5 ? 'Какой результат считается успехом?' : undefined },
+      { labelKey: 'score.criterion.clarity', score: clarityScore, max: 10, hintKey: clarityScore < 6 ? 'score.hint.clarity' : undefined },
+      { labelKey: 'score.criterion.context', score: contextScore, max: 10, hintKey: contextScore < 6 ? 'score.hint.context' : undefined },
+      { labelKey: 'score.criterion.audience', score: audienceScore, max: 10, hintKey: audienceScore < 6 ? 'score.hint.audience' : undefined },
+      { labelKey: 'score.criterion.technical', score: techScore, max: 10, hintKey: techScore < 5 ? 'score.hint.technical' : undefined },
+      { labelKey: 'score.criterion.success', score: successScore, max: 10, hintKey: successScore < 5 ? 'score.hint.success' : undefined },
     ],
   }
 }
@@ -73,6 +75,7 @@ type Props = {
 }
 
 export default function TaskQualityScore({ text, visible }: Props) {
+  const { t } = useLang()
   const [result, setResult] = useState<ScoreResult | null>(null)
 
   useEffect(() => {
@@ -88,13 +91,13 @@ export default function TaskQualityScore({ text, visible }: Props) {
     result.verdict === 'clarify' ? 'text-amber-700' : 'text-red-700'
   const bgColor = result.verdict === 'accept' ? 'bg-green-50 border-green-200' :
     result.verdict === 'clarify' ? 'bg-amber-50 border-amber-200' : 'bg-red-50 border-red-200'
-  const verdictLabel = result.verdict === 'accept' ? 'Принимается в работу' :
-    result.verdict === 'clarify' ? 'Будут уточнения' : 'Вернуться на доработку'
+  const verdictLabel = result.verdict === 'accept' ? t('score.verdict.accept') :
+    result.verdict === 'clarify' ? t('score.verdict.clarify') : t('score.verdict.reject')
 
   return (
     <div className={cn('rounded-lg border p-4 space-y-3', bgColor)}>
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-foreground">Оценка постановки</span>
+        <span className="text-sm font-medium text-foreground">{t('score.title')}</span>
         <span className={cn('text-lg font-semibold', color)}>{result.total} / {result.max}</span>
       </div>
 
@@ -111,18 +114,18 @@ export default function TaskQualityScore({ text, visible }: Props) {
 
       <div className="space-y-1.5">
         {result.criteria.map(c => (
-          <div key={c.label}>
+          <div key={c.labelKey}>
             <div className="flex items-center justify-between text-xs">
-              <span className={cn('text-muted-foreground', c.hint && 'font-medium text-amber-700')}>{c.label}</span>
+              <span className={cn('text-muted-foreground', c.hintKey && 'font-medium text-amber-700')}>{t(c.labelKey)}</span>
               <span className="font-medium text-foreground">{c.score}/{c.max}</span>
             </div>
             <div className="mt-0.5 h-1 w-full overflow-hidden rounded-full bg-white/50">
               <div
                 className="h-full rounded-full bg-current opacity-50 transition-all"
-                style={{ width: `${(c.score / c.max) * 100}%`, color: c.hint ? '#B45309' : '#059669' }}
+                style={{ width: `${(c.score / c.max) * 100}%`, color: c.hintKey ? '#B45309' : '#059669' }}
               />
             </div>
-            {c.hint && <p className="mt-0.5 text-[11px] text-amber-600">{c.hint}</p>}
+            {c.hintKey && <p className="mt-0.5 text-[11px] text-amber-600">{t(c.hintKey)}</p>}
           </div>
         ))}
       </div>

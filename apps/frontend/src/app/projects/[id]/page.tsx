@@ -1,4 +1,7 @@
 'use client'
+import { useLang } from '@/contexts/lang'
+
 export default function OldTasksRedirect() {
-  return <p className="p-8 text-sm text-muted-foreground">Перенаправление...</p>
+  const { t } = useLang()
+  return <p className="p-8 text-sm text-muted-foreground">{t('common.redirecting')}</p>
 }

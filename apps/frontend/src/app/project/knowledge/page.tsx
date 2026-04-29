@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { apiFetch, apiUpload } from '@/lib/api'
 import { useProject } from '@/contexts/project'
+import { useLang } from '@/contexts/lang'
 import AppShell from '@/components/layout/AppShell'
 import FileDropzone from '@/components/FileDropzone'
 import { Trash2, Edit2, Check, X as XIcon, Search, FileText, Loader2 } from 'lucide-react'
@@ -81,6 +82,7 @@ function HighlightedSnippet({ content, query }: { content: string; query: string
 
 function KnowledgePageInner() {
   const { activeProject } = useProject()
+  const { t } = useLang()
   const [items, setItems] = useState<KItem[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<Tab>('text')
@@ -130,7 +132,6 @@ function KnowledgePageInner() {
       .finally(() => setLoading(false))
   }
 
-  // Poll every 3s while any item is missing embedding
   useEffect(() => {
     const hasPending = items.some(i => i.hasEmbedding === false)
     if (hasPending) {
@@ -173,12 +174,12 @@ function KnowledgePageInner() {
       setContent('')
       setTitle('')
       fetch_()
-    } catch (err: any) { setError(err.message ?? 'Ошибка') }
+    } catch (err: any) { setError(err.message ?? t('common.error')) }
     finally { setAdding(false) }
   }
 
   const handleDelete = async (id: string) => {
-    if (!activeProject || !confirm('Удалить?')) return
+    if (!activeProject || !confirm(t('knowledge.deleteConfirm'))) return
     try {
       await apiFetch(`/api/projects/${activeProject.id}/knowledge/${id}`, { method: 'DELETE' })
       setItems(prev => prev.filter(i => i.id !== id))
@@ -187,7 +188,7 @@ function KnowledgePageInner() {
 
   const handleDeleteFile = async (sourceFile: string, fileItems: KItem[]) => {
     if (!activeProject) return
-    if (!confirm(`Удалить файл «${sourceFile}» и все его фрагменты (${fileItems.length} шт.)?`)) return
+    if (!confirm(`${t('knowledge.deleteConfirm')} «${sourceFile}» (${fileItems.length})?`)) return
     try {
       for (const item of fileItems) {
         await apiFetch(`/api/projects/${activeProject.id}/knowledge/${item.id}`, { method: 'DELETE' })
@@ -229,7 +230,7 @@ function KnowledgePageInner() {
   }
 
   if (!activeProject) {
-    return <div className="py-10 text-center text-sm text-muted-foreground"><a href="/dashboard" className="hover:underline">Выберите проект</a></div>
+    return <div className="py-10 text-center text-sm text-muted-foreground"><a href="/dashboard" className="hover:underline">{t('knowledge.noProject')}</a></div>
   }
 
   const fileGroups = items
@@ -241,10 +242,11 @@ function KnowledgePageInner() {
     }, {})
 
   const textItems = items.filter(i => !i.metadata?.sourceFile)
+  const categoryLabel = (value?: string) => value ? t(`knowledge.category.${value}` as any) : ''
 
   return (
     <div className="space-y-6">
-      <h1 className="text-[22px] font-medium text-foreground">База знаний</h1>
+      <h1 className="text-[22px] font-medium text-foreground">{t('knowledge.title')}</h1>
 
       {/* Search */}
       <div className="flex gap-2">
@@ -255,7 +257,7 @@ function KnowledgePageInner() {
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSearch()}
-            placeholder="Семантический поиск..."
+            placeholder={t('knowledge.searchPlaceholder')}
             className="w-full rounded-md border border-input bg-background py-2 pl-8 pr-3 text-sm outline-none focus:ring-2 focus:ring-ring/30"
           />
         </div>
@@ -264,30 +266,30 @@ function KnowledgePageInner() {
           disabled={searching}
           className="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
         >
-          {searching ? 'Поиск...' : 'Найти'}
+          {searching ? t('knowledge.searching') : t('knowledge.search')}
         </button>
         {results && (
           <button onClick={() => setResults(null)} className="rounded-md border border-border px-3 py-2 text-sm text-muted-foreground hover:text-foreground">
-            Сбросить
+            {t('knowledge.reset')}
           </button>
         )}
       </div>
 
       {searchNotReady && (
         <div className="rounded-lg border border-border bg-muted/50 px-4 py-3 text-sm text-muted-foreground">
-          Файлы ещё обрабатываются — семантический поиск станет доступен после завершения индексации.
+          {t('knowledge.notReady')}
         </div>
       )}
 
       {results && (
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Результаты поиска ({results.length})</p>
+          <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{t('knowledge.resultsTitle')} ({results.length})</p>
           {results.length === 0 ? (
-            <p className="text-sm text-muted-foreground">Ничего не найдено</p>
+            <p className="text-sm text-muted-foreground">{t('knowledge.noResults')}</p>
           ) : results.map((r, i) => (
             <div key={i} className="rounded-lg border border-border bg-card p-4 text-sm space-y-2">
               <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">{r.category}</span>
+                <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">{categoryLabel(r.category)}</span>
                 {typeof r.similarity === 'number' && (
                   <span className="text-xs text-muted-foreground">{Math.round(r.similarity * 100)}%</span>
                 )}
@@ -305,18 +307,18 @@ function KnowledgePageInner() {
         <div className="space-y-4">
           {/* Tabs */}
           <div className="flex border-b border-border">
-            {(['text', 'upload'] as Tab[]).map(t => (
+            {(['text', 'upload'] as Tab[]).map(tabKey => (
               <button
-                key={t}
-                onClick={() => setTab(t)}
+                key={tabKey}
+                onClick={() => setTab(tabKey)}
                 className={cn(
                   'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
-                  tab === t
+                  tab === tabKey
                     ? 'border-primary text-foreground'
                     : 'border-transparent text-muted-foreground hover:text-foreground'
                 )}
               >
-                {t === 'text' ? 'Текст' : 'Загрузить файл'}
+                {tabKey === 'text' ? t('knowledge.tabText') : t('knowledge.tabUpload')}
               </button>
             ))}
           </div>
@@ -324,37 +326,37 @@ function KnowledgePageInner() {
           {tab === 'text' ? (
             <form onSubmit={handleAdd} className="space-y-3">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Заголовок</label>
+                <label className="text-xs font-medium text-muted-foreground">{t('knowledge.labelTitle')}</label>
                 <input type="text" value={title} onChange={e => setTitle(e.target.value)}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30" />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Категория</label>
+                <label className="text-xs font-medium text-muted-foreground">{t('knowledge.labelCategory')}</label>
                 <select value={category} onChange={e => setCategory(e.target.value)}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30">
-                  {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                  {CATEGORIES.map(c => <option key={c} value={c}>{categoryLabel(c)}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Содержимое <span className="text-destructive">*</span></label>
+                <label className="text-xs font-medium text-muted-foreground">{t('knowledge.labelContent')} <span className="text-destructive">*</span></label>
                 <textarea value={content} onChange={e => setContent(e.target.value)} required rows={6}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 min-h-[160px] resize-y" />
               </div>
               {error && <p className="text-sm text-destructive">{error}</p>}
               <button type="submit" disabled={adding}
                 className="w-full rounded-md bg-primary py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50">
-                {adding ? 'Сохранение...' : 'Добавить в базу'}
+                {adding ? t('knowledge.adding') : t('knowledge.addButton')}
               </button>
             </form>
           ) : (
             <div className="space-y-4">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium text-muted-foreground">Описание содержимого файла</label>
+                <label className="text-xs font-medium text-muted-foreground">{t('knowledge.uploadDescLabel')}</label>
                 <textarea
                   value={uploadDescription}
                   onChange={e => setUploadDescription(e.target.value)}
                   rows={3}
-                  placeholder="Например: описание продукта, глоссарий, материалы стратегической сессии..."
+                  placeholder={t('knowledge.uploadDescPlaceholder')}
                   className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 min-h-[88px] resize-y"
                 />
               </div>
@@ -373,14 +375,14 @@ function KnowledgePageInner() {
                   ))}
                 </div>
               )}
-              {uploadStatus === 'done' && <p className="text-sm text-green-700">Файлы загружены и обрабатываются</p>}
-              {uploadStatus === 'error' && <p className="text-sm text-destructive">Ошибка загрузки. Проверьте формат файла (PDF, DOCX, MD, TXT).</p>}
+              {uploadStatus === 'done' && <p className="text-sm text-green-700">{t('knowledge.uploadDone')}</p>}
+              {uploadStatus === 'error' && <p className="text-sm text-destructive">{t('knowledge.uploadError')}</p>}
               <button
                 onClick={handleUpload}
                 disabled={uploading || !uploadFiles.length}
                 className="w-full rounded-md bg-primary py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
               >
-                {uploading ? 'Загрузка...' : `Загрузить ${uploadFiles.length > 0 ? `(${uploadFiles.length})` : ''}`}
+                {uploading ? t('knowledge.uploading') : `${t('knowledge.addButton')} ${uploadFiles.length > 0 ? `(${uploadFiles.length})` : ''}`}
               </button>
             </div>
           )}
@@ -389,14 +391,14 @@ function KnowledgePageInner() {
         {/* Right: items list */}
         <div className="space-y-3">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-medium text-foreground">Все материалы</h2>
-            <span className="text-xs text-muted-foreground">{items.length} шт.</span>
+            <h2 className="text-sm font-medium text-foreground">{t('knowledge.materialsTitle')}</h2>
+            <span className="text-xs text-muted-foreground">{items.length}</span>
           </div>
           {loading ? (
-            <p className="text-sm text-muted-foreground">Загрузка...</p>
+            <p className="text-sm text-muted-foreground">{t('common.loading')}</p>
           ) : items.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border p-6 text-center">
-              <p className="text-sm text-muted-foreground">База знаний пуста</p>
+              <p className="text-sm text-muted-foreground">{t('knowledge.empty')}</p>
             </div>
           ) : (
             <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
@@ -413,29 +415,28 @@ function KnowledgePageInner() {
                             {sourceFile}
                           </span>
                         <span className="rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                          {fileItems[0]?.category}
+                          {categoryLabel(fileItems[0]?.category)}
                         </span>
                           <button
                             onClick={() => handleDeleteFile(sourceFile, fileItems)}
                             className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
-                            aria-label={`Удалить файл ${sourceFile}`}
                           >
                             <Trash2 size={14} />
                           </button>
                         </div>
                       <div className="flex items-center gap-2">
                         <span className="inline-flex rounded-full border border-border px-3 py-1 text-xs font-medium text-muted-foreground">
-                          {fileItems.length} фрагментов
+                          {fileItems.length} {t('knowledge.fragments')}
                         </span>
                           {allReady ? (
                             <span className="inline-flex items-center gap-1 text-xs font-medium text-green-600">
                               <Check size={12} />
-                              Готов к поиску
+                              {t('knowledge.ready')}
                             </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
                               <Loader2 size={12} className="animate-spin" />
-                              Обработка {readyCount}/{fileItems.length}
+                              {t('knowledge.processing')} {readyCount}/{fileItems.length}
                             </span>
                         )}
                       </div>
@@ -453,7 +454,7 @@ function KnowledgePageInner() {
                 <div key={item.id} className="rounded-lg border border-border bg-card p-4">
                   <div className="mb-2 flex items-center gap-2">
                     <span className="inline-flex rounded-full border border-border bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                      {item.category}
+                      {categoryLabel(item.category)}
                     </span>
                     {item.metadata?.title && (
                       <span className="text-xs font-medium text-foreground">{item.metadata.title}</span>
@@ -470,11 +471,11 @@ function KnowledgePageInner() {
                       <div className="flex gap-2">
                         <button onClick={() => handleEdit(item.id)}
                           className="flex items-center gap-1 rounded-md bg-primary px-2.5 py-1.5 text-xs font-medium text-primary-foreground hover:opacity-90">
-                          <Check size={12} /> Сохранить
+                          <Check size={12} /> {t('common.save')}
                         </button>
                         <button onClick={() => setEditingId(null)}
                           className="flex items-center gap-1 rounded-md border border-border px-2.5 py-1.5 text-xs text-muted-foreground hover:text-foreground">
-                          <XIcon size={12} /> Отмена
+                          <XIcon size={12} /> {t('common.cancel')}
                         </button>
                       </div>
                     </div>
@@ -486,13 +487,13 @@ function KnowledgePageInner() {
                           onClick={() => { setEditingId(item.id); setEditContent(item.content) }}
                           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
                         >
-                          <Edit2 size={12} /> Изменить
+                          <Edit2 size={12} /> {t('knowledge.editAction')}
                         </button>
                         <button
                           onClick={() => handleDelete(item.id)}
                           className="flex items-center gap-1 text-xs text-muted-foreground hover:text-destructive transition-colors"
                         >
-                          <Trash2 size={12} /> Удалить
+                          <Trash2 size={12} /> {t('common.delete')}
                         </button>
                       </div>
                     </>

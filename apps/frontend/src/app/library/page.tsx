@@ -5,6 +5,7 @@ import AgentAvatar from '@/components/AgentAvatar'
 import AppShell from '@/components/layout/AppShell'
 import StatusBadge from '@/components/StatusBadge'
 import { useProject } from '@/contexts/project'
+import { useLang } from '@/contexts/lang'
 import { apiFetch } from '@/lib/api'
 import { ArrowRight, Copy } from 'lucide-react'
 
@@ -30,10 +31,20 @@ function ArtifactCard({
   task,
   copied,
   onCopy,
+  locale,
+  copyLabel,
+  copiedLabel,
+  noOutputLabel,
+  agentLabel,
 }: {
   task: Task
   copied: boolean
   onCopy: (output: string) => void
+  locale: string
+  copyLabel: string
+  copiedLabel: string
+  noOutputLabel: string
+  agentLabel: (agentType?: string) => string
 }) {
   const primaryOutput = task.executions?.[0]?.agentOutputs?.[0]
   const outputPreview = primaryOutput?.output?.slice(0, 120) ?? ''
@@ -52,7 +63,7 @@ function ArtifactCard({
           )}
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {primaryOutput?.agentType ?? 'ARTIFACT'}
+              {agentLabel(primaryOutput?.agentType)}
             </p>
           </div>
         </div>
@@ -68,13 +79,13 @@ function ArtifactCard({
             {hasOverflow ? '…' : ''}
           </p>
         ) : (
-          <p className="text-sm text-muted-foreground">Вывод агента пока не сохранён.</p>
+          <p className="text-sm text-muted-foreground">{noOutputLabel}</p>
         )}
       </div>
 
       <div className="mt-4 flex items-center justify-between gap-3">
         <span className="text-xs text-muted-foreground">
-          {new Date(task.updatedAt || task.createdAt).toLocaleDateString('ru-RU', {
+          {new Date(task.updatedAt || task.createdAt).toLocaleDateString(locale, {
             day: 'numeric',
             month: 'short',
             year: 'numeric',
@@ -89,7 +100,7 @@ function ArtifactCard({
           >
             <span className="inline-flex items-center gap-1.5">
               <Copy size={14} />
-              {copied ? 'Скопировано' : 'Копировать'}
+              {copied ? copiedLabel : copyLabel}
             </span>
           </button>
           <a
@@ -108,6 +119,8 @@ function ArtifactCard({
 
 export default function LibraryPage() {
   const { activeProject } = useProject()
+  const { t, lang } = useLang()
+  const locale = lang === 'en' ? 'en-US' : 'ru-RU'
   const [tasks, setTasks] = useState<Task[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -137,7 +150,7 @@ export default function LibraryPage() {
         if (!cancelled) setTasks(detailedTasks)
       })
       .catch((err: Error) => {
-        if (!cancelled) setError(err.message || 'Не удалось загрузить библиотеку')
+        if (!cancelled) setError(err.message || t('library.errorLoad'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -154,7 +167,7 @@ export default function LibraryPage() {
       setCopiedTaskId(taskId)
       setTimeout(() => setCopiedTaskId((current) => (current === taskId ? null : current)), 2000)
     } catch {
-      setError('Не удалось скопировать текст')
+      setError(t('library.errorCopy'))
     }
   }
 
@@ -162,8 +175,8 @@ export default function LibraryPage() {
     return (
       <AppShell>
         <div className="flex flex-col items-center justify-center py-20 text-center">
-          <p className="text-sm font-medium text-foreground">Библиотека контента</p>
-          <p className="mt-1 text-xs text-muted-foreground">Проект не выбран</p>
+          <p className="text-sm font-medium text-foreground">{t('library.noProject')}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('common.noProject')}</p>
         </div>
       </AppShell>
     )
@@ -173,8 +186,8 @@ export default function LibraryPage() {
     <AppShell>
       <div className="space-y-4">
         <div>
-          <h1 className="text-[22px] font-medium text-foreground">Библиотека</h1>
-          <p className="text-sm text-muted-foreground">Готовые артефакты и завершённые задачи проекта</p>
+          <h1 className="text-[22px] font-medium text-foreground">{t('library.title')}</h1>
+          <p className="text-sm text-muted-foreground">{t('library.subtitle')}</p>
         </div>
 
         {error && (
@@ -185,13 +198,13 @@ export default function LibraryPage() {
 
         {loading && (
           <div className="rounded-lg border border-border bg-card p-6 text-sm text-muted-foreground">
-            Загрузка библиотеки...
+            {t('library.loading')}
           </div>
         )}
 
         {!loading && tasks.length === 0 && (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
-            <p className="text-sm text-muted-foreground">Пока нет завершённых задач для библиотеки.</p>
+            <p className="text-sm text-muted-foreground">{t('library.empty')}</p>
           </div>
         )}
 
@@ -203,6 +216,11 @@ export default function LibraryPage() {
                 task={task}
                 copied={copiedTaskId === task.id}
                 onCopy={(output) => handleCopy(task.id, output)}
+                locale={locale}
+                copyLabel={t('library.copy')}
+                copiedLabel={t('library.copied')}
+                noOutputLabel={t('library.noOutput')}
+                agentLabel={(agentType) => t(agentType ? `agent.${agentType}` as any : 'agent.ARTIFACT')}
               />
             ))}
           </div>

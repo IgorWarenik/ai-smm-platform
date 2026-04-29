@@ -4,10 +4,12 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import { apiFetch } from '@/lib/api'
 import { useProject } from '@/contexts/project'
+import { useLang } from '@/contexts/lang'
 
 export default function NewProjectPage() {
   const router = useRouter()
   const { setActiveProject } = useProject()
+  const { t } = useLang()
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [error, setError] = useState('')
@@ -25,7 +27,7 @@ export default function NewProjectPage() {
       setActiveProject({ id: data.id, name: data.name, description: data.description })
       router.push('/dashboard')
     } catch (err: any) {
-      setError(err.message ?? 'Ошибка создания проекта')
+      setError(err.message ?? t('projectNew.error'))
     } finally {
       setLoading(false)
     }
@@ -36,16 +38,16 @@ export default function NewProjectPage() {
       <div className="w-full max-w-md">
         <div className="mb-6">
           <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground transition-colors">
-            ← Назад
+            {t('projectNew.back')}
           </Link>
-          <h1 className="mt-3 text-[22px] font-medium text-foreground">Новый проект</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Создайте рабочее пространство для маркетинга</p>
+          <h1 className="mt-3 text-[22px] font-medium text-foreground">{t('projectNew.title')}</h1>
+          <p className="mt-1 text-sm text-muted-foreground">{t('projectNew.subtitle')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
             <label className="text-sm font-medium text-foreground">
-              Название <span className="text-destructive">*</span>
+              {t('projectNew.nameLabel')} <span className="text-destructive">*</span>
             </label>
             <input
               type="text"
@@ -53,17 +55,17 @@ export default function NewProjectPage() {
               onChange={e => setName(e.target.value)}
               required
               autoFocus
-              placeholder="Название проекта"
+              placeholder={t('projectNew.namePlaceholder')}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 transition-all"
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium text-foreground">Описание</label>
+            <label className="text-sm font-medium text-foreground">{t('projectNew.descLabel')}</label>
             <textarea
               value={description}
               onChange={e => setDescription(e.target.value)}
               rows={3}
-              placeholder="Краткое описание проекта"
+              placeholder={t('projectNew.descPlaceholder')}
               className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring/30 transition-all resize-none"
             />
           </div>
@@ -74,13 +76,13 @@ export default function NewProjectPage() {
               disabled={loading}
               className="rounded-md bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50 transition-opacity"
             >
-              {loading ? 'Создание...' : 'Создать проект'}
+              {loading ? t('projectNew.submitting') : t('projectNew.submit')}
             </button>
             <Link
               href="/dashboard"
               className="rounded-md border border-border px-5 py-2.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
             >
-              Отмена
+              {t('common.cancel')}
             </Link>
           </div>
         </form>

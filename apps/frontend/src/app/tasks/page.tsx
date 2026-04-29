@@ -38,7 +38,8 @@ function mergeTask(existing: Task | undefined, incoming: Task): Task {
 }
 
 function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: string; onRefresh: () => void }) {
-  const { t } = useLang()
+  const { t, lang } = useLang()
+  const locale = lang === 'en' ? 'en-US' : 'ru-RU'
   const [answer, setAnswer] = useState('')
   const [clarifying, setClarifying] = useState(false)
   const [editMode, setEditMode] = useState(false)
@@ -77,7 +78,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
         <div className="flex items-center justify-between gap-3 mb-3">
           <StatusBadge status={task.status} />
           <span className="text-xs text-muted-foreground">
-            {new Date(task.createdAt).toLocaleDateString('ru-RU')}
+            {new Date(task.createdAt).toLocaleDateString(locale)}
           </span>
         </div>
 
@@ -153,7 +154,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
                 {ev.agentType && (
                   <div className="mb-1 flex items-center gap-1.5">
                     <AgentAvatar type={ev.agentType as any} size={20} />
-                    <span className="text-xs font-medium text-muted-foreground">{ev.agentType}</span>
+                    <span className="text-xs font-medium text-muted-foreground">{t(`agent.${ev.agentType}` as any)}</span>
                   </div>
                 )}
                 {ev.content && <p className="text-foreground">{ev.content}</p>}
@@ -187,7 +188,7 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
             <div key={i} className="rounded-lg border border-border bg-card p-4">
               <div className="mb-2 flex items-center gap-1.5">
                 <AgentAvatar type={o.agentType} size={20} />
-                <span className="text-xs font-medium text-muted-foreground">{o.agentType}</span>
+                <span className="text-xs font-medium text-muted-foreground">{t(`agent.${o.agentType}` as any)}</span>
               </div>
               <div className="whitespace-pre-wrap text-sm text-foreground leading-relaxed">{o.output}</div>
             </div>
@@ -207,7 +208,8 @@ function TaskDetail({ task, projectId, onRefresh }: { task: Task; projectId: str
 
 function TasksPageInner() {
   const { activeProject } = useProject()
-  const { t } = useLang()
+  const { t, lang } = useLang()
+  const locale = lang === 'en' ? 'en-US' : 'ru-RU'
   const searchParams = useSearchParams()
   const initialSelected = searchParams.get('selected')
 
@@ -338,7 +340,7 @@ function TasksPageInner() {
                     <div className="mb-2 flex items-center gap-2">
                       <StatusBadge status={task.status} />
                       <span className="ml-auto text-[11px] text-muted-foreground">
-                        {new Date(task.createdAt).toLocaleDateString('ru-RU')}
+                        {new Date(task.createdAt).toLocaleDateString(locale)}
                       </span>
                     </div>
                     <p className="line-clamp-2 text-sm text-foreground">{task.input}</p>

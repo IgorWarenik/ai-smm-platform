@@ -4,6 +4,7 @@ import { Paperclip, Mic, Link2 } from 'lucide-react'
 import { useDropzone } from 'react-dropzone'
 import { FileChip } from './FileDropzone'
 import { cn } from '@/lib/utils'
+import { useLang } from '@/contexts/lang'
 
 type Props = {
   value: string
@@ -17,6 +18,7 @@ type Props = {
 export default function MultimodalInput({
   value, onChange, onSubmit, placeholder, disabled, className,
 }: Props) {
+  const { t } = useLang()
   const [attachments, setAttachments] = useState<File[]>([])
   const [urlInput, setUrlInput] = useState('')
   const [showUrlField, setShowUrlField] = useState(false)
@@ -92,7 +94,7 @@ export default function MultimodalInput({
               onSubmit({ text: value, attachments, urls })
             }
           }}
-          placeholder={placeholder ?? 'Опишите задачу подробно — платформу, цель, аудиторию...'}
+          placeholder={placeholder ?? t('multimodal.placeholder')}
           disabled={disabled}
           rows={4}
           className="w-full resize-none rounded-t-lg bg-transparent px-3 py-3 text-sm text-foreground placeholder:text-muted-foreground outline-none disabled:opacity-50"
@@ -100,7 +102,7 @@ export default function MultimodalInput({
         />
         {isDragActive && (
           <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-background/80 text-sm font-medium text-primary">
-            Отпустите файл
+            {t('multimodal.dropFile')}
           </div>
         )}
       </div>
@@ -117,10 +119,10 @@ export default function MultimodalInput({
             className="flex-1 rounded-md border border-input bg-muted px-2.5 py-1.5 text-sm outline-none focus:ring-1 focus:ring-ring"
           />
           <button type="button" onClick={addUrl} className="rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground">
-            Добавить
+            {t('multimodal.add')}
           </button>
           <button type="button" onClick={() => setShowUrlField(false)} className="text-xs text-muted-foreground hover:text-foreground">
-            Отмена
+            {t('common.cancel')}
           </button>
         </div>
       )}
@@ -143,16 +145,16 @@ export default function MultimodalInput({
           type="button"
           onClick={() => fileInputRef.current?.click()}
           className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          title="Прикрепить файл"
+          title={t('multimodal.attachFile')}
         >
           <Paperclip size={14} />
-          <span>Файл</span>
+          <span>{t('multimodal.file')}</span>
         </button>
         <button
           type="button"
           onClick={() => setShowUrlField(v => !v)}
           className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
-          title="Добавить URL"
+          title={t('multimodal.addUrl')}
         >
           <Link2 size={14} />
           <span>URL</span>
@@ -160,14 +162,14 @@ export default function MultimodalInput({
         <button
           type="button"
           className="flex items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground opacity-50 cursor-not-allowed"
-          title="Голосовой ввод — скоро"
+          title={t('multimodal.voiceSoon')}
           disabled
         >
           <Mic size={14} />
-          <span>Голос</span>
+          <span>{t('multimodal.voice')}</span>
         </button>
         {onSubmit && (
-          <span className="ml-auto text-[10px] text-muted-foreground">⌘↵ отправить</span>
+          <span className="ml-auto text-[10px] text-muted-foreground">{t('multimodal.submitShortcut')}</span>
         )}
       </div>
     </div>

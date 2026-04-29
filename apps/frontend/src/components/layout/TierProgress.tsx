@@ -1,6 +1,7 @@
 'use client'
 import { apiFetch } from '@/lib/api'
 import { useProject } from '@/contexts/project'
+import { useLang } from '@/contexts/lang'
 import { useEffect, useState } from 'react'
 
 type Profile = {
@@ -37,6 +38,7 @@ function calcScore(profile: Profile | null): number {
 
 export default function TierProgress({ collapsed }: { collapsed: boolean }) {
   const { activeProject } = useProject()
+  const { t } = useLang()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loaded, setLoaded] = useState(false)
 
@@ -64,16 +66,10 @@ export default function TierProgress({ collapsed }: { collapsed: boolean }) {
     )
   }
 
-  const tier1Filled = TIER1_FIELDS.filter(f => {
-    const v = profile?.[f]
-    if (Array.isArray(v)) return v.length > 0
-    return v && String(v).trim().length > 0
-  }).length
-
   return (
     <div className="px-3 py-3 space-y-1.5">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">Профиль проекта</span>
+        <span className="text-xs font-medium text-muted-foreground">{t('tier.profile')}</span>
         <span className="text-xs font-medium text-foreground">{pct}%</span>
       </div>
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">

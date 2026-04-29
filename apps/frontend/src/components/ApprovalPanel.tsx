@@ -49,7 +49,9 @@ export default function ApprovalPanel({ projectId, taskId, agentOutputs, onDecis
                 <div className="space-y-3">
                     {agentOutputs?.map((o, i) => (
                         <div key={i} className="rounded-lg border border-border bg-background p-4">
-                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">{o.agentType}</p>
+                            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                                {t(`agent.${o.agentType}` as any)}
+                            </p>
                             <MarkdownContent content={o.content} />
                         </div>
                     ))}

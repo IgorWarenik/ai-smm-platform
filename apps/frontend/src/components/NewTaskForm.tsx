@@ -74,7 +74,7 @@ export default function NewTaskForm({ initialType = 'Авто-определен
     try {
       const combinedText = [
         payload.text,
-        payload.urls.length ? `\nСсылки: ${payload.urls.join(', ')}` : '',
+        payload.urls.length ? `\n${t('newTask.linksLabel')}: ${payload.urls.join(', ')}` : '',
       ].join('')
       const res: any = await apiFetch(`/api/projects/${activeProject.id}/tasks`, {
         method: 'POST',

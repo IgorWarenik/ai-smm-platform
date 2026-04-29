@@ -130,12 +130,13 @@ function ProjectSelector() {
 function SMMLDashboard() {
   const { user } = useAuth()
   const { activeProject, clearActiveProject } = useProject()
-  const { t } = useLang()
+  const { t, lang } = useLang()
+  const locale = lang === 'en' ? 'en-US' : 'ru-RU'
   const [tasks, setTasks] = useState<Task[]>([])
   const [counts, setCounts] = useState<TaskCounts>({ awaitingApproval: 0, awaitingClarification: 0, running: 0, completedThisMonth: 0 })
   const [loading, setLoading] = useState(true)
 
-  const today = new Date().toLocaleDateString('ru-RU', { weekday: 'long', day: 'numeric', month: 'long' })
+  const today = new Date().toLocaleDateString(locale, { weekday: 'long', day: 'numeric', month: 'long' })
 
   useEffect(() => {
     if (!activeProject) return
