@@ -1,6 +1,6 @@
 # AI SMM Platform
 
-AI SMM Platform is a local-first marketing automation workbench. It combines a Next.js frontend, a Fastify API, PostgreSQL with pgvector, Redis, n8n workflows, MinIO storage, and Prometheus metrics.
+AI SMM Platform is a local-first marketing automation workbench. It combines a Next.js frontend, a Fastify API, PostgreSQL with pgvector, Redis, n8n workflows, MinIO storage, and Prometheus metrics. I just wanted to make something through SDD+TDD apporach and with more seriuous backend then projects before.
 
 The product lets a user create projects, configure a model provider, create marketing tasks, review generated output, request revisions, and manage project knowledge for RAG. The frontend includes task management, a Kanban board, Calendar, Library, and a Knowledge Base per project.
 
